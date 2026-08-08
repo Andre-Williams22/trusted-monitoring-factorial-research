@@ -62,10 +62,11 @@ MODELS = {
     "haiku45": ("anthropic/claude-haiku-4-5", "anthropic", "weak"),
     "sonnet5": ("anthropic/claude-sonnet-5", "anthropic", "mid"),
     "opus48": ("anthropic/claude-opus-4-8", "anthropic", "strong"),
-    # Google (model ids unverified - no key configured yet)
-    "flashlite": ("google/gemini-2.5-flash-lite", "google", "weak"),
-    "flash": ("google/gemini-2.5-flash", "google", "mid"),
-    "geminipro": ("google/gemini-2.5-pro", "google", "strong"),
+    # Google (verified callable on-account 2026-08; the 2.5/3-pro pinned ids
+    # 404 for new accounts, so strong uses the -latest alias).
+    "flashlite": ("google/gemini-3.1-flash-lite", "google", "weak"),
+    "flash": ("google/gemini-3.5-flash", "google", "mid"),
+    "geminipro": ("google/gemini-pro-latest", "google", "strong"),
     # Open-weights monitor (monitor-only; never an attacker). Needs
     # OPENROUTER_API_KEY in .env. Override id via QWEN_MODEL env var; verify
     # with a LIMIT=2 smoke test before a full run.

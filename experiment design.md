@@ -36,15 +36,21 @@ This experiment holds the protocol fixed and varies the thing control evaluation
 ## Design: a 3 × 8 attacker × monitor matrix (24 cells)
 
 **Attackers (rows) — strongest available per family** (worst-case proxy, per the control framing):
-`openai/gpt-5.5` · `anthropic/claude-opus-4-8` · `google/gemini-2.5-pro`
+`openai/gpt-5.5` · `anthropic/claude-opus-4-8` · `google/gemini-pro-latest`
 
 **Monitors (columns) — two capability tiers per family, plus open-weights:**
 
 | Tier | OpenAI | Anthropic | Google | Open-weights |
 |---|---|---|---|---|
-| **Weak ("trusted" role)** | gpt-4.1-mini | claude-haiku-4-5 | gemini-2.5-flash-lite | Qwen-2.5-72B (OpenRouter) |
-| Mid (ladder only, same-family) | gpt-5.4-mini | claude-sonnet-5 | gemini-2.5-flash | — |
-| **Strong (upper bound)** | gpt-5.5 | claude-opus-4-8 | gemini-2.5-pro | — |
+| **Weak ("trusted" role)** | gpt-4.1-mini | claude-haiku-4-5 | gemini-3.1-flash-lite | Qwen-2.5-72B (OpenRouter) |
+| Mid (ladder only, same-family) | gpt-5.4-mini | claude-sonnet-5 | gemini-3.5-flash | — |
+| **Strong (upper bound)** | gpt-5.5 | claude-opus-4-8 | gemini-pro-latest | — |
+
+All model IDs were verified callable on the project's accounts on 2026-08-07 via
+`LIMIT=2` smoke tests. Note: `gemini-2.5-pro` and `gemini-3-pro-preview` return
+404 for accounts created after their restriction date, so the Google strong tier
+uses the `-latest` alias; this means the Google row is pinned to an alias rather
+than a fixed snapshot, and its underlying model may change over time.
 
 Cell inventory: 9 same-family ladder cells (weak/mid/strong per provider) + 6 weak-tier cross cells + 6 strong-tier cross cells + 3 Qwen cells = **24**. n=100/mode per cell (100 honest + 100 attack). Attacker generations are cached and reused across all monitor cells, so 21 of 24 cells cost monitor-inference only.
 
