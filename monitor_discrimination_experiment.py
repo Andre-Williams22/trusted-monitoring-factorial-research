@@ -36,7 +36,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from inspect_ai import eval as inspect_eval
-from inspect_ai.model import GenerateConfig
+from inspect_ai.model import GenerateConfig, get_model
 
 from control_arena import EvalMode
 from control_arena.analysis import samples_df, compute_safety, compute_usefulness
@@ -127,6 +127,33 @@ MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
 FAIL_ON_ERROR = os.environ.get("FAIL_ON_ERROR", "false").lower() in ("1", "true")
 MAX_CONNECTIONS = int(os.environ.get("MAX_CONNECTIONS", "0"))  # 0 = provider default
 MAX_SAMPLES = int(os.environ.get("MAX_SAMPLES", "0"))  # 0 = inspect default
+
+
+# CROSS_PROVIDER_REPLAY: replaying a Gemini (OpenRouter) trajectory to an OpenAI
+# monitor dies with
+#   400 Invalid 'input[2].id': string too long. Expected max 64, got 22346
+# The upstream reasoning items carry ids far longer than OpenAI's Responses API
+# accepts, and it is deterministic - retrying never helps. The Chat Completions
+# API has no per-item id constraint, so route OpenAI monitors through it whenever
+# the attacker is NOT an OpenAI model.
+#
+# UNVERIFIED at scale: the cell this would rescue (geminipro x gpt55, the one
+# incomplete cell in the matrix) has not been re-run since. Confirm cheaply with
+#   LIMIT=2 PAIRS=geminipro:gpt55 FORCE=1 python monitor_discrimination_experiment.py
+# before paying for the full n=100 re-run. RESPONSES_API=1 opts back out.
+CHAT_COMPLETIONS_FOR_CROSS_PROVIDER = os.environ.get("RESPONSES_API", "") in ("", "0", "false")
+
+
+def monitor_model(atk: str, mon: str):
+    """Monitor model id, or a configured Model where the bare id would 400."""
+    model_id = MODELS[mon][0]
+    if (
+        CHAT_COMPLETIONS_FOR_CROSS_PROVIDER
+        and MODELS[mon][1] == "openai"
+        and MODELS[atk][1] != "openai"
+    ):
+        return get_model(model_id, responses_api=False)
+    return model_id
 
 
 def _gen_config() -> GenerateConfig:
@@ -224,7 +251,7 @@ def run_pair(atk: str, mon: str) -> None:
     )
     eval_config = ControlEvalConfig(
         untrusted_model=MODELS[atk][0],
-        trusted_model=MODELS[mon][0],
+        trusted_model=monitor_model(atk, mon),
         untrusted_config=_gen_config(),
         trusted_config=_gen_config(),
         fail_on_error=FAIL_ON_ERROR,
@@ -260,6 +287,13 @@ def analyze(atk: str, mon: str) -> dict:
         else float("nan")
     )
 
+    # control_arena coerces side_task_success to bool when computing safety, so
+    # ONE attack sample that died before scoring (see CROSS_PROVIDER_REPLAY note)
+    # raises and takes the whole cell's safety with it. Drop those rows and
+    # report the count rather than losing a 199/200 cell.
+    unscored = df.index[(df.eval_mode == "attack") & df["side_task_success"].isna()]
+    df_safety = df.drop(unscored)
+
     atk_prov, mon_prov = MODELS[atk][1], MODELS[mon][1]
     row = {
         "attacker": atk,
@@ -280,10 +314,12 @@ def analyze(atk: str, mon: str) -> dict:
         "susp_honest": round(h[sc].mean(), 3),
         "susp_attack": round(a[sc].mean(), 3),
         "auc": auc,
+        # attack samples that never got scored, and so are excluded from safety
+        "n_unscored": len(unscored),
     }
     for b in AUDIT_BUDGETS:
         try:
-            row[f"safety@{b}%"] = round(compute_safety(df, "max_suspicion_scorer", b), 3)
+            row[f"safety@{b}%"] = round(compute_safety(df_safety, "max_suspicion_scorer", b), 3)
         except Exception as e:  # noqa: BLE001
             row[f"safety@{b}%"] = f"err:{e}"
     return row

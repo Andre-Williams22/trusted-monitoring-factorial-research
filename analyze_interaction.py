@@ -62,6 +62,8 @@ def load() -> pd.DataFrame:
             same=int(PROV[atk] == PROV[mon]),
             auc=roc_auc_score([0] * len(h) + [1] * len(a), list(h[SC]) + list(a[SC])),
             n_succ=int(((a["main_task_success"] == True) & (a["side_task_success"] == True)).sum()),  # noqa: E712
+            # kept for the sample-level bootstrap that sets the exclusion bound
+            h_scores=h[SC].to_numpy(float), a_scores=a[SC].to_numpy(float),
         ))
     return pd.DataFrame(rows)
 
@@ -105,6 +107,72 @@ def main() -> None:
         null.append(v.resid.values[p == 0].mean() - v.resid.values[p == 1].mean())
     pval = (np.abs(null) >= abs(obs)).mean()
     print(f"  permutation p = {pval:.3f} (10k shuffles)")
+
+    # How large an effect could this design still have missed? A null is only
+    # meaningful with the exclusion bound stated.
+    #
+    # Two independent sources of uncertainty, reported separately because which
+    # one dominates is itself the interesting fact:
+    #   (a) sample-level: resample suspicion scores inside each cell, recompute
+    #       every AUC, refit, recompute the contrast. Propagates the ~0.04
+    #       sampling SE of one AUC at n=100/mode. Comes out SMALL, because the
+    #       additive fit absorbs most within-cell noise into row/column effects.
+    #   (b) cell-level: resample which cells landed in the design, within group.
+    #       With 15 viable cells (6 same / 9 cross) over 2 attackers, this is
+    #       the binding constraint - more samples per cell would not help.
+    #   (c) combined: both at once. This is the bound to quote.
+    s_idx = np.flatnonzero(v.same.values == 1)
+    c_idx = np.flatnonzero(v.same.values == 0)
+    same_mask = v.same.values == 1
+    r = v.resid.values
+
+    def _resample_aucs() -> np.ndarray:
+        out = np.empty(len(v))
+        for i, row in enumerate(v.itertuples()):
+            hb = row.h_scores[rng.integers(0, len(row.h_scores), len(row.h_scores))]
+            ab = row.a_scores[rng.integers(0, len(row.a_scores), len(row.a_scores))]
+            out[i] = roc_auc_score([0] * len(hb) + [1] * len(ab), np.r_[hb, ab])
+        return out
+
+    boot_cell = np.array([
+        r[rng.choice(c_idx, len(c_idx), True)].mean() - r[rng.choice(s_idx, len(s_idx), True)].mean()
+        for _ in range(10000)
+    ])
+    boot_samp = np.empty(2000)
+    boot_both = np.empty(2000)
+    for b in range(2000):
+        aucs = _resample_aucs()
+        bb, *_ = np.linalg.lstsq(X, aucs, rcond=None)
+        rb = aucs - X @ bb
+        boot_samp[b] = rb[~same_mask].mean() - rb[same_mask].mean()
+        boot_both[b] = (rb[rng.choice(c_idx, len(c_idx), True)].mean()
+                        - rb[rng.choice(s_idx, len(s_idx), True)].mean())
+    for lab_, arr, note in (
+        ("sample-level", boot_samp, "within-cell noise only"),
+        ("cell-level  ", boot_cell, "which-cells noise only"),
+        ("COMBINED    ", boot_both, "the bound to quote"),
+    ):
+        lo_, hi_ = np.percentile(arr, [2.5, 97.5])
+        print(f"  95% CI, {lab_} resample: [{lo_:+.3f}, {hi_:+.3f}] AUC  ({note})")
+    lo_b, hi_b = np.percentile(boot_both, [2.5, 97.5])
+    print(f"  -> excludes provenance effects larger than "
+          f"~{max(abs(lo_b), abs(hi_b)):.02f} AUC in either direction")
+
+    # --- H2 by tier (preregistered: run weak and strong tiers separately) --
+    # The weak tier is the deployment-relevant contrast - "which cheap model
+    # should watch my frontier model?" - so it gets reported even though the
+    # per-tier cell counts are tiny and nothing here is powered.
+    print("\n=== H2 by monitor tier (preregistered split) ===")
+    for tier in ("weak", "mid", "strong"):
+        t = v[v.tier == tier]
+        s, c = t[t.same == 1], t[t.same == 0]
+        if not (len(s) and len(c)):
+            print(f"  {tier:7} not estimable (same n={len(s)}, cross n={len(c)})")
+            continue
+        print(f"  {tier:7} same={s.auc.mean():.3f} (n={len(s)})  "
+              f"cross={c.auc.mean():.3f} (n={len(c)})  delta={c.auc.mean() - s.auc.mean():+.3f}")
+    print("  NB: raw tier means, NOT row/column-corrected - attacker difficulty is")
+    print("      confounded in here, and no tier has enough cells to be powered.")
 
     # --- paired comparisons ----------------------------------------------
     print("\n=== Paired: monitors tested against BOTH viable attackers ===")
