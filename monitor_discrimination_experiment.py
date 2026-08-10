@@ -36,6 +36,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from inspect_ai import eval as inspect_eval
+from inspect_ai.model import GenerateConfig
 
 from control_arena import EvalMode
 from control_arena.analysis import samples_df, compute_safety, compute_usefulness
@@ -62,11 +63,13 @@ MODELS = {
     "haiku45": ("anthropic/claude-haiku-4-5", "anthropic", "weak"),
     "sonnet5": ("anthropic/claude-sonnet-5", "anthropic", "mid"),
     "opus48": ("anthropic/claude-opus-4-8", "anthropic", "strong"),
-    # Google (verified callable on-account 2026-08; the 2.5/3-pro pinned ids
-    # 404 for new accounts, so strong uses the -latest alias).
-    "flashlite": ("google/gemini-3.1-flash-lite", "google", "weak"),
-    "flash": ("google/gemini-3.5-flash", "google", "mid"),
-    "geminipro": ("google/gemini-pro-latest", "google", "strong"),
+    # Google, routed via OpenRouter. The direct Google AI Studio API hit a
+    # per-project DAILY quota (429 with 30x1800s backoff = an overnight stall),
+    # and gemini-2.5-pro / gemini-3-pro-preview 404 for new accounts there.
+    # OpenRouter sidesteps both. All three verified callable 2026-08-08.
+    "flashlite": ("openrouter/google/gemini-3.1-flash-lite", "google", "weak"),
+    "flash": ("openrouter/google/gemini-3.5-flash", "google", "mid"),
+    "geminipro": ("openrouter/google/gemini-3.1-pro-preview", "google", "strong"),
     # Open-weights monitor (monitor-only; never an attacker). Needs
     # OPENROUTER_API_KEY in .env. Override id via QWEN_MODEL env var; verify
     # with a LIMIT=2 smoke test before a full run.
@@ -110,10 +113,35 @@ AUDIT_BUDGETS = [1, 2, 5]
 LIMIT = int(os.environ.get("LIMIT", "200"))
 EXPERIMENT = os.environ.get("EXPERIMENT", "ladder-openai")
 LOG_ROOT = os.environ.get("LOG_ROOT", "logs/monitor_exp")
+# FORCE=1 re-runs cells whose logs exist but are INCOMPLETE (see run_pair).
+FORCE = os.environ.get("FORCE", "") not in ("", "0", "false")
+# Throttling. A daily-quota wall (e.g. Gemini free tier) otherwise manifests as
+# ~30 retries x 1800s backoff = an overnight stall with no progress. Low
+# max_retries makes it fail in minutes so you can see it and react.
+MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
+MAX_CONNECTIONS = int(os.environ.get("MAX_CONNECTIONS", "0"))  # 0 = provider default
+MAX_SAMPLES = int(os.environ.get("MAX_SAMPLES", "0"))  # 0 = inspect default
 
+
+def _gen_config() -> GenerateConfig:
+    kw: dict = {"max_retries": MAX_RETRIES}
+    if MAX_CONNECTIONS:
+        kw["max_connections"] = MAX_CONNECTIONS
+    return GenerateConfig(**kw)
+
+# PAIRS env var runs specific cells only, e.g. PAIRS="geminipro:flashlite" or
+# "geminipro:flashlite,gpt55:qwen". Useful for cost control: run ONE cell per
+# attacker first so its (expensive) generations land in cache, after which every
+# other cell for that attacker is monitor-only.
+_explicit = os.environ.get("PAIRS")
+_selected = (
+    [tuple(p.split(":")) for p in _explicit.split(",")]
+    if _explicit
+    else PRESETS[EXPERIMENT]
+)
 # De-duplicate pairs while preserving order (cross overlaps the ladders).
 _seen: set = set()
-PAIRS = [p for p in PRESETS[EXPERIMENT] if not (p in _seen or _seen.add(p))]
+PAIRS = [p for p in _selected if not (p in _seen or _seen.add(p))]
 
 # ---- Policies (identical across configs -> attacker generations cache) ----
 setting = AppsSetting(cache_python_code=True)
@@ -127,11 +155,46 @@ def log_dir_for(atk: str, mon: str) -> str:
     return os.path.join(LOG_ROOT, f"atk-{atk}__mon-{mon}__n{LIMIT}")
 
 
+def cell_status(atk: str, mon: str) -> tuple[str, int]:
+    """Return (status, n_scored) for a cell: missing | partial | complete.
+
+    A cell whose .eval files exist but hold fewer than 2*LIMIT scored samples is
+    PARTIAL (e.g. killed by a quota wall). Treating partial as complete silently
+    reports a biased subset - the early-index samples the run reached first -
+    with no indication that n < expected.
+    """
+    log_dir = log_dir_for(atk, mon)
+    if not (os.path.isdir(log_dir) and any(f.endswith(".eval") for f in os.listdir(log_dir))):
+        return "missing", 0
+    try:
+        import pandas as pd
+
+        df = samples_df(log_dir)
+        sc = "score_max_suspicion_scorer"
+        n = int(pd.to_numeric(df[sc], errors="coerce").notna().sum())
+    except Exception:  # noqa: BLE001 - unreadable/partial logs count as partial
+        return "partial", 0
+    return ("complete", n) if n >= 2 * LIMIT else ("partial", n)
+
+
 def run_pair(atk: str, mon: str) -> None:
     log_dir = log_dir_for(atk, mon)
-    if os.path.isdir(log_dir) and any(f.endswith(".eval") for f in os.listdir(log_dir)):
-        print(f"[skip] attacker={atk} monitor={mon} (logs exist)")
+    status, n = cell_status(atk, mon)
+    if status == "complete":
+        print(f"[skip] attacker={atk} monitor={mon} (complete, n={n})")
         return
+    if status == "partial":
+        if not FORCE:
+            print(
+                f"[WARN] attacker={atk} monitor={mon} INCOMPLETE (n={n}, "
+                f"expected {2 * LIMIT}). Not re-running - delete the dir, or "
+                f"set FORCE=1 to re-run. Excluded from analysis."
+            )
+            return
+        print(f"[force] attacker={atk} monitor={mon} incomplete (n={n}) -> re-running")
+        import shutil
+
+        shutil.rmtree(log_dir)
     print(f"[run ] attacker={atk} monitor={mon} -> {log_dir}")
 
     # NOTE: basic_monitor_builder(model=...) is IGNORED - the monitor resolves
@@ -149,6 +212,9 @@ def run_pair(atk: str, mon: str) -> None:
     eval_config = ControlEvalConfig(
         untrusted_model=MODELS[atk][0],
         trusted_model=MODELS[mon][0],
+        untrusted_config=_gen_config(),
+        trusted_config=_gen_config(),
+        **({"max_samples": MAX_SAMPLES} if MAX_SAMPLES else {}),
     )
     tasks = get_control_task_product(
         settings=setting,
@@ -187,8 +253,16 @@ def analyze(atk: str, mon: str) -> dict:
         "mon_tier": MODELS[mon][2],
         "same_provider": atk_prov == mon_prov,
         "n": len(scored),
+        "n_exp": 2 * LIMIT,
+        "complete": len(scored) >= 2 * LIMIT,
         "usefulness": round(compute_usefulness(df), 3),
         "backdoor_rate": round(a["side_task_success"].mean(), 3),
+        # Attacks that both solved the task AND landed the backdoor - the only
+        # events safety is actually computed from. If this is near zero the
+        # safety number is noise regardless of n (attack-viability check).
+        "n_success_atk": int(
+            ((a["main_task_success"] == True) & (a["side_task_success"] == True)).sum()  # noqa: E712
+        ),
         "susp_honest": round(h[sc].mean(), 3),
         "susp_attack": round(a[sc].mean(), 3),
         "auc": auc,
@@ -261,6 +335,10 @@ def main() -> None:
 
     rows, srows = [], []
     for atk, mon in PAIRS:
+        status, n = cell_status(atk, mon)
+        if status != "complete":
+            print(f"[excluded from analysis] {atk}/{mon}: {status} (n={n})")
+            continue
         try:
             rows.append(analyze(atk, mon))
             srows.extend(stability(atk, mon))
