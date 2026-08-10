@@ -1,6 +1,6 @@
 # Monitor Identity, Not Tier — and the Attacker Axis Is Just as Big
 
-*An attacker × monitor factorial in ControlArena. A weak-tier model outperforms most strong-tier monitors; monitor provenance doesn't matter and is expensive to test; and which model you cast as the attacker moves the safety number as much as the monitor does.*
+*An attacker × monitor factorial in ControlArena. A weak-tier model outperforms most strong-tier monitors; I could not detect any same-family monitor blindspot, and testing for one is expensive; and under a single fixed attack prompt, which model you cast as the attacker moves the safety number as much as the monitor does.*
 
 **Status:** Empirical pilot study — 23 cells, 200 samples each. Hypotheses preregistered before the funded runs (dated commit in the repo). One hypothesis contradicted, one cleanly null, one confirmed, plus an unplanned finding.
 
@@ -16,8 +16,8 @@ I ran an attacker × monitor matrix in [ControlArena](https://github.com/UKGover
 
 1. **Monitor identity beats monitor tier.** Mean monitor AUC spans **0.585 → 0.730** across the nine monitors in the analysis — a 0.145 spread, z ≈ 3.75. A *weak*-tier `claude-haiku-4-5` (0.721) outperforms every strong-tier monitor but Opus, and beats the weakest by z ≈ 3.52. **Measure your monitor; don't size it.**
 2. **Neither capability ladder is monotonic**, and I can say why rather than waving at noise: the per-cell 95% CI is ±0.076, wider than any within-row gap. Tier does not buy you a prediction at this scale.
-3. **Which model you cast as the attacker matters as much as the monitor.** Under one identical, off-the-shelf attack prompt, successful attacks per 100 were **Gemini 45–69, GPT-5.5 11–37, Claude Opus 1**. Holding the monitor fixed, safety swings **0.24–0.44** — comparable to the ~0.35 swing from swapping the monitor, measured on the same cells.
-4. **Monitor provenance doesn't matter.** I preregistered a "shared blindspot" hypothesis — a monitor from the attacker's own family should be blinder to its backdoors. Row/column-corrected interaction: **+0.0067 AUC, permutation p = 0.60.** A clean null, 20× smaller than the identity effect.
+3. **Which model you cast as the attacker matters as much as the monitor — under one fixed prompt.** With ControlArena's default attack policy held identical, successful attacks per 100 were **Gemini 45–69, GPT-5.5 11–37, Claude Opus 1**. Holding the monitor fixed, safety swings **0.24–0.44** — comparable to the ~0.35 swing from swapping the monitor, measured on the same cells. Read this as *elicitation compatibility* — how well one prompt happens to work on each model — not as a ranking of intrinsic attack capability. It's exploratory and post-hoc.
+4. **No detectable same-family monitor blindspot.** I preregistered one — a monitor from the attacker's own family should be blinder to its backdoors. Row/column-corrected interaction: **+0.0067 AUC, permutation p = 0.60**, bounded at roughly ±0.08. That's "not detected at this scale," not "does not exist," but whatever is there is small next to the 0.145 identity effect.
 5. **Cross-provider monitoring is also brittle in a way I haven't seen documented** — replaying one provider's trajectories to another's monitor hit two hard API failures. Combined with (4): **no measured detection benefit, and a real implementation cost.**
 6. **Two ways safety numbers lie at small scale**, plus a four-item reporting checklist. A blind monitor reported safety = 1.00 at tutorial scale; safety@1% is structurally unresolvable below ~100 honest samples.
 
@@ -125,9 +125,15 @@ Some models are simply better at this task than their tier implies, which is exa
 
 ---
 
-## The attacker axis: which model you cast matters as much as the monitor
+## The attacker axis: under one fixed prompt, which model you cast matters as much as the monitor
 
 Everything above holds the attacker fixed and varies the monitor. This section does the opposite, and the effect is at least as large.
+
+**Two caveats that shape how this should be read, stated before the numbers rather than after.**
+
+*This measures elicitation compatibility, not attack capability.* One prompt — ControlArena's default — was applied unchanged to three models. What varies is how well that particular prompt happens to elicit backdoors from each of them. A prompt tuned per model could narrow or close the gap entirely, and nothing here establishes that Gemini is intrinsically a stronger attacker than Opus in any general sense. The finding is that **a fixed prompt does not transfer across model families**, which is the version that actually bears on control evaluations — because a fixed prompt is what they use.
+
+*This was not a preregistered hypothesis.* It emerged from the data, and it's the leading candidate for follow-up rather than a settled result. Everything below should be read as a screen.
 
 Hold the monitor fixed; swap the attacker. All six monitors that appear in both viable rows:
 
@@ -146,7 +152,7 @@ Every monitor's measured safety swings by 0.24–0.44 depending on who it's defe
 
 *Attack elicitation is a silent confound in cross-model control evals. Dots in the left panel are individual monitor cells within that attacker's row, so their spread is the deferral effect from the previous section, not attacker variance.*
 
-That the red team determines the number is the control framework's premise, not news (Greenblatt et al. 2024). What's new here is the **axis**: the prior work above varies how the attacker attacks — timing, content, selection policy, skill. This holds the attack policy **completely fixed** — one identical off-the-shelf prompt, ControlArena's default — and varies only which frontier model executes it.
+That the red team determines the number is the control framework's premise, not news (Greenblatt et al. 2024). What this pilot adds is one under-studied dimension of it: the prior work above varies how the attacker attacks — timing, content, selection policy, skill — while holding the model roughly fixed. This holds the attack policy **completely fixed** and varies only which frontier model executes it, which isolates prompt-to-model elicitation compatibility as a variable in its own right.
 
 | Attacker | Successful attacks / 100 | Backdoor landed | Main task solved (attack mode) | Usefulness (honest) |
 |---|---|---|---|---|
@@ -160,11 +166,11 @@ Opus is the extreme case, and the middle columns are the point. It is **not** re
 
 Read naively, **the Opus rows look like a triumph** — high safety, monitors apparently working. They are an artifact of a red team that didn't attack. That is why all eight are dropped.
 
-**Implication:** attack elicitation is a silent confound in any control comparison that changes the untrusted model. If you swap in a new model and safety goes up, you have learned nothing until you check whether your red team still functions against it — and the check is one column: not the backdoor *attempt* rate, but the count of attacks that both solved the task and landed the backdoor. Had I not added that column, I would have written up the Anthropic rows as a monitoring result.
+**Implication:** in this setup, attack elicitation acted as a silent confound — and the mechanism generalises even if the magnitude doesn't, because any control comparison that swaps the untrusted model while holding the attack prompt fixed inherits it. If you swap in a new model and safety goes up, you have learned nothing until you check whether your red team still functions against it — and the check is one column: not the backdoor *attempt* rate, but the count of attacks that both solved the task and landed the backdoor. Had I not added that column, I would have written up the Anthropic rows as a monitoring result.
 
 ---
 
-## Neither axis: monitor provenance doesn't matter, and testing it is expensive
+## Neither axis: no detectable provenance effect, and testing for one is expensive
 
 I preregistered that same-family monitors would be blinder to their own family's backdoors — shared training pipelines producing shared blindspots. The deployment stake is real: labs will monitor their own models with their own smaller models, and if that's systematically weaker, the fix (open-weights cross-lineage monitors) is cheap.
 
@@ -189,7 +195,7 @@ Nothing. The paired comparisons show it's a *direction* problem, not just a powe
 
 Inconsistent in sign, not merely small. The provenance effect (0.007) is **20× smaller** than the monitor-identity effect (0.145). Refer back to the heatmap above: the same-family boxes are not systematically cooler than their neighbours.
 
-**I think this null is useful.** It's the first cross-provider monitor measurement I'm aware of in a control setting, and it *validates* the same-family default labs would otherwise adopt on faith. If you were considering a cross-provider monitoring arrangement for decorrelation, this is evidence you don't need one — at least for single-step backdoor detection on APPS, at this sample size, against non-adaptive attacks.
+**I think this null is useful, stated precisely.** What I can claim is *no detectable same-family blindspot in this setup* — single-step backdoor detection on APPS, two viable attacker rows, non-adaptive attacks, effects above ~±0.08 AUC excluded. What I cannot claim is that the effect is zero. But it's the first cross-provider monitor measurement I'm aware of in a control setting, and to the extent it goes anywhere it goes toward *validating* the same-family default labs would otherwise adopt on faith — which is worth knowing before anyone pays a decorrelation tax.
 
 ### Cross-provider monitoring is also actively brittle
 
@@ -258,6 +264,8 @@ All four are one column each. None of them are standard.
 - **23 of 24 cells.** The missing one (Gemini attacker × GPT-5.5 monitor) failed on an API incompatibility, not an omission — though see above on why I'd expect that one to be fixable.
 - **API snapshot.** Closed models update silently; IDs and dates are pinned in the repo. The Google strong tier is an alias, not a fixed snapshot.
 - **The attacker-axis result is post-hoc** and should be treated as a hypothesis for confirmation, not a confirmed finding.
+- **The attack prompt was not tuned per model**, so the attacker-axis result measures prompt-to-model elicitation compatibility rather than intrinsic attack capability. A per-model-elicited red team could narrow the gap substantially. This is a limitation of the claim's *scope*, not of its relevance — fixed prompts are what control evals actually use.
+- **Three attacker models, two of them viable.** Any statement about how attacker choice behaves in general rests on n=2 usable rows.
 
 ## What I'd do next
 
