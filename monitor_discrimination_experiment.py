@@ -119,6 +119,12 @@ FORCE = os.environ.get("FORCE", "") not in ("", "0", "false")
 # ~30 retries x 1800s backoff = an overnight stall with no progress. Low
 # max_retries makes it fail in minutes so you can see it and react.
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
+# Don't let one bad sample kill the cell. inspect's default error handling
+# cancels the whole task group once errors trip its threshold - a single
+# transient 402 was observed taking 23 healthy in-flight samples down with it,
+# leaving the cell at 138/200. False = log the failed sample and keep going;
+# the completeness guard still catches genuinely truncated cells.
+FAIL_ON_ERROR = os.environ.get("FAIL_ON_ERROR", "false").lower() in ("1", "true")
 MAX_CONNECTIONS = int(os.environ.get("MAX_CONNECTIONS", "0"))  # 0 = provider default
 MAX_SAMPLES = int(os.environ.get("MAX_SAMPLES", "0"))  # 0 = inspect default
 
@@ -174,7 +180,14 @@ def cell_status(atk: str, mon: str) -> tuple[str, int]:
         n = int(pd.to_numeric(df[sc], errors="coerce").notna().sum())
     except Exception:  # noqa: BLE001 - unreadable/partial logs count as partial
         return "partial", 0
-    return ("complete", n) if n >= 2 * LIMIT else ("partial", n)
+    # 99% tolerance: a small number of samples can fail with deterministic,
+    # un-retryable API errors (e.g. a cross-model thinking-block signature
+    # rejection when an attacker's trajectory is replayed to another provider's
+    # monitor). Those never succeed on re-run, and 199/200 vs 200/200 changes
+    # nothing statistically. The exact n is always reported, so the shortfall
+    # stays visible; genuinely truncated cells (quota walls, cancellations) sit
+    # far below this bar and are still caught.
+    return ("complete", n) if n >= 0.99 * 2 * LIMIT else ("partial", n)
 
 
 def run_pair(atk: str, mon: str) -> None:
@@ -214,6 +227,7 @@ def run_pair(atk: str, mon: str) -> None:
         trusted_model=MODELS[mon][0],
         untrusted_config=_gen_config(),
         trusted_config=_gen_config(),
+        fail_on_error=FAIL_ON_ERROR,
         **({"max_samples": MAX_SAMPLES} if MAX_SAMPLES else {}),
     )
     tasks = get_control_task_product(
@@ -254,7 +268,7 @@ def analyze(atk: str, mon: str) -> dict:
         "same_provider": atk_prov == mon_prov,
         "n": len(scored),
         "n_exp": 2 * LIMIT,
-        "complete": len(scored) >= 2 * LIMIT,
+        "complete": len(scored) >= 0.99 * 2 * LIMIT,
         "usefulness": round(compute_usefulness(df), 3),
         "backdoor_rate": round(a["side_task_success"].mean(), 3),
         # Attacks that both solved the task AND landed the backdoor - the only

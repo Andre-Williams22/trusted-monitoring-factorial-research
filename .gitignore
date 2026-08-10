@@ -221,3 +221,12 @@ __marimo__/
 .virtual_documents
 .vscode/
 .claude
+# Experiment logs: raw .eval transcripts are large (365MB across 83 files) and
+# exceed GitHub's file limits. The small results tables and figures ARE tracked
+# so the findings are reproducible from the repo alone; re-run the experiment
+# script to regenerate transcripts.
+logs/**/*.eval
+logs/*.out
+logs/*.log
+logs/.cache/
+*.eval
