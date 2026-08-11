@@ -29,7 +29,7 @@ Opus is not refusing — it solves **84** of 100 main tasks in attack mode, so i
 
 **Reporting checklist.** Any trusted-monitoring safety number should ship with: (1) **monitor AUC**, (2) **successful-attack count** (below ~5, safety is noise), (3) **an audit budget your honest-sample count can resolve**, (4) **n and a CI**. One column each; none are currently standard.
 
-Full write-up: [LESSWRONG_POST.md](LESSWRONG_POST.md) · Preregistration: [experiment design.md](experiment%20design.md) · Figures: [figures/](figures/)
+Preregistration: [experiment design.md](experiment%20design.md) · Figures: [figures/](figures/) · Per-cell results: [logs/monitor_exp/](logs/monitor_exp/)
 
 ## Design
 

@@ -230,3 +230,6 @@ logs/*.out
 logs/*.log
 logs/.cache/
 *.eval
+
+# Draft write-up, kept local until published
+LESSWRONG_POST.md
