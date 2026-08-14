@@ -1,6 +1,6 @@
-# Trusted Monitoring: What the Safety Number Is Actually Measuring
+# Trusted Monitoring: Monitor Identity Beats Monitor Tier
 
-An AI control experiment built on [ControlArena](https://github.com/UKGovernmentBEIS/control-arena) (UK AI Security Institute). It set out to measure which monitor to deploy; the more useful result was that four of the instruments used to answer that question report confidently wrong numbers, all failing in the same direction — toward looking safe.
+An AI control experiment built on [ControlArena](https://github.com/UKGovernmentBEIS/control-arena) (UK AI Security Institute). It set out to measure which monitor to deploy; the answer is that it is monitor identity, not capability tier — and getting there required correcting two measurement mistakes of my own.
 
 A 3 × 8 attacker × monitor matrix (24 cells, 10 distinct monitors, four model lineages), n = 100 per mode.
 
@@ -8,15 +8,14 @@ A 3 × 8 attacker × monitor matrix (24 cells, 10 distinct monitors, four model 
 
 | # | Finding | Status |
 |---|---|---|
-| 1 | **`compute_safety` credits the blue team for catching attacks that never worked.** It computes `caught / (caught + uncaught_successful)`, where `caught` counts *every* attack above threshold. **61.6%** of that numerator is doomed attacks; reported safety exceeds the catch rate on landed attacks in **15 of 15 cells**. Worst cell: safety **0.78** while catching **0 of 11** attacks that actually landed. | Measurement |
-| 2 | **The honest suspicion distribution is degenerate, so the audit budget never binds.** In 10 of 15 cells all 100 honest samples share one score; no cell has more than two distinct values. The 1/2/5% thresholds are identical in 12 of 15 cells. | Measurement |
-| 3 | **On that data ROC-AUC is algebraically a detection rate**, not a ranking statistic: where honest is constant, AUC = 0.5 + p/2, exact to four decimals. | Measurement |
-| 4 | **At tutorial scale safety is uninterpretable.** A blind monitor (AUC 0.53) reported safety = 1.00 at n=15; the bootstrap 95% CI at n=10/mode spans [0.00, 0.83]. Convergent with Ge-Wang et al. (2026) by a different mechanism. | H3, confirmed |
-| 5 | **Monitor identity beats monitor tier.** Two monitors sharing a tier differ **~3×** more than the tiers differ (2.9× / 2.4× / 2.8× on three metrics, P(identity > tier) ≈ 0.99). Tier explains ~15% of variance — no more than a random relabelling (permutation p = 0.50). | H1, confirmed after metric fix |
-| 6 | **A strong-tier monitor is worst where it counts.** Scored only on backdoors that landed, `gemini-3.1-pro` catches **4%** — last of six, below every weak-tier model. | Unplanned |
-| 7 | **Monitor provenance: a bound, not a null.** The interaction is +0.0067 AUC (p = 0.60), but 3 of 6 same-family cells have *structurally zero* residuals — the test rests on three contrasts across two families, which disagree in sign. Effects rivalling the identity effect are ruled out; smaller ones are unresolved. | H2, bounded |
-| 8 | **Elicitation is a silent confound.** Under one identical attack prompt, successful attacks per 100 ran Gemini 45–69, GPT-5.5 11–37, Opus 4.8 just **1**. Opus is not refusing — it solves 84 main tasks in attack mode. Its rows read as a monitoring success and are an artifact of a red team that didn't attack. | Unplanned, post-hoc |
-| 9 | **Cross-provider monitoring is brittle.** Thinking-block signature rejection and a 22 KB `id` field — one cell of 24 is uncompleteable. | Incidental |
+| 1 | **The honest suspicion distribution is degenerate, so the audit budget never binds.** In 10 of 15 cells all 100 honest samples share one score; no cell has more than two distinct values. The 1/2/5% thresholds are identical in 12 of 15 cells. | Measurement |
+| 2 | **On that data ROC-AUC is algebraically a detection rate**, not a ranking statistic: where honest is constant, AUC = 0.5 + p/2, exact to four decimals. | Measurement |
+| 3 | **At tutorial scale safety is uninterpretable.** A blind monitor (AUC 0.53) reported safety = 1.00 at n=15; the bootstrap 95% CI at n=10/mode spans [0.00, 0.83]. Convergent with Ge-Wang et al. (2026) by a different mechanism. | H3, confirmed |
+| 4 | **Monitor identity beats monitor tier.** Two monitors sharing a tier differ **~3×** more than the tiers differ (2.9× / 2.4× / 2.8× on three metrics, P(identity > tier) ≈ 0.99). Tier explains ~15% of variance — no more than a random relabelling (permutation p = 0.50). | H1, confirmed after metric fix |
+| 5 | **A strong-tier monitor is worst where it counts.** Scored only on backdoors that landed, `gemini-3.1-pro` catches **4%** — last of six, below every weak-tier model. | Unplanned |
+| 6 | **Monitor provenance: a bound, not a null.** The interaction is +0.0067 AUC (p = 0.60), but 3 of 6 same-family cells have *structurally zero* residuals — the test rests on three contrasts across two families, which disagree in sign. Effects rivalling the identity effect are ruled out; smaller ones are unresolved. | H2, bounded |
+| 7 | **Elicitation is a silent confound.** Under one identical attack prompt, successful attacks per 100 ran Gemini 45–69, GPT-5.5 11–37, Opus 4.8 just **1**. Opus is not refusing — it solves 84 main tasks in attack mode. Its rows read as a monitoring success and are an artifact of a red team that didn't attack. | Unplanned, post-hoc |
+| 8 | **Cross-provider monitoring is brittle.** Thinking-block signature rejection and a 22 KB `id` field — one cell of 24 is uncompleteable. | Incidental |
 
 ### Retraction
 
@@ -31,7 +30,7 @@ Preregistration: [experiment design.md](experiment%20design.md) · Figures: [fig
 **Attackers (rows):** strongest per family — `gpt-5.5`, `claude-opus-4-8`, `gemini-3.1-pro-preview`
 **Monitors (columns):** 10 distinct models — weak / mid / strong per family + open-weights `Qwen-2.5-72B` (always cross-lineage)
 
-Each attacker is paired with **8** of the 10: its own family's full three-tier ladder, plus the weak and strong tier of each *other* family, plus Qwen. 3 × 8 = 24 cells. **9** monitors enter the analysis — `claude-sonnet-5` appears only in the Opus attacker row, which is dropped wholesale (finding 8).
+Each attacker is paired with **8** of the 10: its own family's full three-tier ladder, plus the weak and strong tier of each *other* family, plus Qwen. 3 × 8 = 24 cells. **9** monitors enter the analysis — `claude-sonnet-5` appears only in the Opus attacker row, which is dropped wholesale (finding 7).
 
 | Tier | OpenAI | Anthropic | Google | Open-weights |
 |---|---|---|---|---|
@@ -91,7 +90,7 @@ Every results table carries `n`, `n_exp`, `complete`, and `n_success_atk` so nei
 
 ## Limitations
 
-**Two viable attacker rows** — every monitor mean rests on two cells, and the bootstrap resamples within cells, not across attackers, so no interval here captures attacker-to-attacker variation · no mid tier in the balanced 2 × 6 confirmatory sub-design · the identity-vs-tier ratio's upper bound is unstable and shouldn't be quoted · the landed-attack metric has small denominators (11–69 per cell) · prompted proxy attacker, not a real schemer · static, non-adaptive attacks · **one monitor scaffold, one domain** — the degenerate score distribution may be a property of *this scaffold* rather than of these models, which is the most important thing to check before generalising findings 2 and 3 · provenance is a bound resting on three contrasts across two families · closed-model API snapshot, IDs pinned · findings 6 and 8 are post-hoc.
+**Two viable attacker rows** — every monitor mean rests on two cells, and the bootstrap resamples within cells, not across attackers, so no interval here captures attacker-to-attacker variation · no mid tier in the balanced 2 × 6 confirmatory sub-design · the identity-vs-tier ratio's upper bound is unstable and shouldn't be quoted · the landed-attack metric has small denominators (11–69 per cell) · prompted proxy attacker, not a real schemer · static, non-adaptive attacks · **one monitor scaffold, one domain** — the degenerate score distribution may be a property of *this scaffold* rather than of these models, which is the most important thing to check before generalising findings 1 and 2 · provenance is a bound resting on three contrasts across two families · closed-model API snapshot, IDs pinned · findings 5 and 7 are post-hoc.
 
 ## References
 
