@@ -233,3 +233,9 @@ logs/.cache/
 
 # Draft write-up, kept local until published
 LESSWRONG_POST.md
+
+# Suspicion-score cache rebuilt by analyze_monitor_identity.py
+.score_cache.pkl
+
+# AUC-based figures superseded by the metric correction (kept locally, not published)
+figures/superseded/
