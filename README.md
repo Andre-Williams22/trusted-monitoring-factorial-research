@@ -4,6 +4,8 @@ An AI control experiment built on [ControlArena](https://github.com/UKGovernment
 
 A 3 × 8 attacker × monitor matrix (24 cells, 10 distinct monitors, four model lineages), n = 100 per mode.
 
+**Funded by a BlueDot Impact rapid grant.**
+
 ## The finding: which model, not what size
 
 Six monitors, each tested against **both** surviving attacker rows — a balanced sub-design that happens to be exactly 3 weak-tier and 3 strong-tier, so attacker difficulty cancels. Metric is the fraction of attacks flagged at **zero false alarms on honest code**.
@@ -121,9 +123,46 @@ Four failure modes cost real money here. Three of them produced *plausible-looki
 
 Every results table carries `n`, `n_exp`, `complete`, and `n_success_atk` so neither incompleteness nor an inert red team can hide.
 
+## Selecting a monitor — a hypothesis, not a recommendation
+
+> **This section is opinion, not result.** It is derived post-hoc from six monitors in a single pilot, and the correlations supporting it do not reach statistical significance at that sample size. It is written down as a hypothesis worth testing, not a finding to act on.
+
+Ordered by how well the data backs each:
+
+1. **Measure the specific model.** Neither label predicts performance. Tier: R² = 0.153, permutation p = 0.50. Lineage/family: R² = 0.883 on aggregate detection — but that is four category levels over six points, so it nearly saturates by construction; it fails the permutation test (p = 0.155) and collapses on landed attacks (R² = 0.339, p = 0.80). "Prefer lab X" is as unsupported as "prefer big."
+2. **Score on the attacks that landed, not on all attempts.** The two rankings correlate at **Spearman +0.20**. `claude-opus-4-8` is 1st on attempts and 4th on landed; `gemini-3.1-pro` is 3rd and then last. Ranking by AUC or aggregate catch rate ranks on something that barely predicts the target.
+3. **Report false-alarm rate at your operating threshold, always.** `claude-haiku-4-5` is 1st on landed attacks *and* flags 23% of honest code. Both are true; the second may disqualify it at scale.
+4. **First, count how many distinct values the monitor emits.** One or two, and quantile thresholds and ROC statistics do not mean what their names say — see corrections A and B. Thirty-second check; it gates whether 1–3 are meaningful.
+
+**Weakest, most interesting:** distinct score values vs. landed-attack performance is **ρ = +0.82**; false-alarm rate vs. the same is **ρ = +0.88**. Both suggest a monitor emitting a *graded* signal beats one emitting zero for nearly everything — a two-value monitor can flag but cannot rank. The critical Spearman at n = 6 is ≈ 0.89, so **neither clears significance**; both lean on two extreme points; and it is pattern-hunting on the data that produced the headline result.
+
+### Experiments worth running
+
+Also opinion. Ordered by cost.
+
+- **Score-expressiveness screen** — run candidates over existing traffic, no attack labels needed, measure score spread. A free pre-filter if the ρ = +0.82 relationship survives. Needs 15–20 monitors to test.
+- **Monitor bake-off scored on landed attacks with FPR reported** — 10+ monitors, 3+ attackers, before any ranking is portable.
+- **Vary the monitor prompt alongside the model** — the likeliest way this result fails to transfer. If the ranking is prompt-fit rather than model quality, the honest claim shrinks to "measure your monitor *on your scaffold*."
+- **Report the aggregate-vs-landed rank correlation** as a standard diagnostic in any control eval. Free to compute from data you already have.
+- **Check whether the degenerate honest distribution is scaffold-specific** — cheapest item here, biggest consequence for corrections A and B.
+- **Self-monitoring diagonal** — N models each generating and each monitoring; the diagonal is a model grading its own output. Tests self-recognition directly, and is symmetric by construction so it cannot produce the structurally-zero contrasts that hollowed out the provenance test.
+- **A third attacker family** — everything comparative here rests on two. An open-weights attacker is cheap and avoids refusal and cross-provider API problems.
+- **Fix the failed cell** (22 KB `id` field) — the most informative missing cell, since `gpt-5.5`-as-monitor currently appears in only one row.
+- **Per-model attack elicitation**, so the red team does not silently die when the untrusted model changes.
+
 ## Limitations
 
-**Two viable attacker rows** — every monitor mean rests on two cells, and the bootstrap resamples within cells, not across attackers, so no interval here captures attacker-to-attacker variation · no mid tier in the balanced 2 × 6 confirmatory sub-design · the identity-vs-tier ratio's upper bound is unstable and shouldn't be quoted · the landed-attack metric has small denominators (11–69 per cell) · prompted proxy attacker, not a real schemer · static, non-adaptive attacks · **one monitor scaffold, one domain** — the degenerate score distribution may be a property of *this scaffold* rather than of these models, which is the most important thing to check before generalising corrections A and B · provenance is a bound resting on three contrasts across two families · closed-model API snapshot, IDs pinned · findings 2 and 3 are post-hoc.
+- **Two viable attacker rows.** Every monitor mean rests on exactly two cells. The bootstrap resamples within cells, not across attackers, so no interval reported here captures attacker-to-attacker variation. Any claim about how monitor choice behaves in general stands on n = 2.
+- **Six monitors in the confirmatory design, and no mid tier.** The balanced 2 × 6 sub-design is weak vs. strong only.
+- **The identity-vs-tier ratio's confidence interval is [1.2×, 11.8×].** The direction is solid (P ≈ 0.99); the magnitude is not. The upper bound is unstable — the denominator approaches zero in some bootstrap draws — and should not be quoted.
+- **One monitor scaffold, one domain.** A single prompt (`basic_monitor`, final-code review) on APPS, which is public and near-certainly in training data. The degenerate score distribution may be a property of *this scaffold* rather than of these models — the most important thing to check before generalising corrections A and B.
+- **Static, non-adaptive attacks**, with a prompted proxy attacker rather than a real schemer. No red-team iteration against each monitor. The provenance bound in particular may not survive adaptive attacks (Terekhov et al. 2025).
+- **The landed-attack metric has small denominators** (11–69 successful attacks per cell), so those intervals are the widest reported.
+- **Provenance is a bound, not a null.** Three of six same-family cells have structurally zero residuals; the test rests on three contrasts across two families that disagree in sign.
+- **Findings 2 and 3 are post-hoc**, as is the entire selection-protocol section above.
+- **The selection criteria rest on six monitors.** Neither supporting correlation (ρ = +0.82, +0.88) clears the n = 6 significance threshold of ≈ 0.89, and both are analysed on the same data that produced the headline result.
+- **One cell of 24 never completed** — a cross-provider replay hit `400 Invalid 'input[2].id': string too long — max 64, got 22346`. Almost certainly a replay-path bug rather than a real API limit, which is a caveat on treating it as impossible.
+- **Closed-model API snapshot.** Models update silently. IDs are pinned in the repo; the Google strong tier is an alias, not a fixed snapshot.
 
 ## References
 
@@ -136,4 +175,3 @@ Every results table carries `n`, `n_exp`, `complete`, and `n_success_atk` so nei
 - Bhatt et al. (2025). [*Ctrl-Z: Controlling AI Agents via Resampling*](https://arxiv.org/abs/2504.10374)
 - Griffin et al. (2024). [*Games for AI Control*](https://arxiv.org/abs/2409.07985)
 
-Funded by a BlueDot Impact rapid grant (~$150 in API credits).
