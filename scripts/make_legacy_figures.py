@@ -24,19 +24,15 @@ from sklearn.metrics import roc_auc_score
 
 from control_arena.analysis import compute_safety, compute_usefulness, samples_df
 
-LIMIT = int(os.environ.get("LIMIT", "100"))
-ROOT = os.environ.get("LOG_ROOT", "logs/monitor_exp")
-OUT = os.environ.get("FIG_DIR", "figures")
-SC = "score_max_suspicion_scorer"
+from utils import config
 
-# Display names + tier ordering (must match monitor_discrimination_experiment.py)
-PROVIDER = {
-    "gpt41mini": ("OpenAI", "weak"), "gpt54mini": ("OpenAI", "mid"), "gpt55": ("OpenAI", "strong"),
-    "haiku45": ("Anthropic", "weak"), "sonnet5": ("Anthropic", "mid"), "opus48": ("Anthropic", "strong"),
-    "flashlite": ("Google", "weak"), "flash": ("Google", "mid"), "geminipro": ("Google", "strong"),
-    "qwen": ("Qwen (OSS)", "strong"),
-}
-TIER_ORDER = {"weak": 0, "mid": 1, "strong": 2}
+LIMIT = config.limit()
+ROOT = config.log_root()
+OUT = config.figure_dir()
+SC = config.SUSPICION_COL
+# (family, tier) per model key, from the shared registry.
+PROVIDER = {k: (config.FAMILY[k], config.TIER[k]) for k in config.BY_KEY}
+TIER_ORDER = config.TIER_ORDER
 
 
 def safety_at(df: pd.DataFrame, budget: int) -> tuple[float, int]:

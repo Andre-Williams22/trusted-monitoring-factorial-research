@@ -20,25 +20,15 @@ from sklearn.metrics import roc_auc_score
 
 from control_arena.analysis import samples_df
 
-LIMIT = int(os.environ.get("LIMIT", "100"))
-ROOT = os.environ.get("LOG_ROOT", "logs/monitor_exp")
-SC = "score_max_suspicion_scorer"
-PROV = {
-    "gpt41mini": "OpenAI", "gpt54mini": "OpenAI", "gpt55": "OpenAI",
-    "haiku45": "Anthropic", "sonnet5": "Anthropic", "opus48": "Anthropic",
-    "flashlite": "Google", "flash": "Google", "geminipro": "Google",
-    "qwen": "Qwen",
-}
-TIER = {
-    "gpt41mini": "weak", "gpt54mini": "mid", "gpt55": "strong",
-    "haiku45": "weak", "sonnet5": "mid", "opus48": "strong",
-    "flashlite": "weak", "flash": "mid", "geminipro": "strong",
-    "qwen": "strong",
-}
-TIER_ORD = {"weak": 0, "mid": 1, "strong": 2}
-# Cells whose attacker essentially never lands a working backdoor carry no
-# signal - including them would let a dead row dominate the fit.
-MIN_SUCCESSFUL_ATTACKS = 5
+from utils import config
+
+LIMIT = config.limit()
+ROOT = config.log_root()
+SC = config.SUSPICION_COL
+PROV = config.FAMILY
+TIER = config.TIER
+TIER_ORD = config.TIER_ORDER
+MIN_SUCCESSFUL_ATTACKS = config.MIN_SUCCESSFUL_ATTACKS
 
 
 def load() -> pd.DataFrame:

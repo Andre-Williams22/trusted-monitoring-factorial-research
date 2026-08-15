@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trusted-monitoring-factorial"
+version = "0.1.0"
+description = "An attacker x monitor factorial in ControlArena: does monitor identity or monitor tier determine discrimination?"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+
+# The analysis deliberately avoids sklearn and scipy: AUC is a rank statistic
+# pandas can express, and every interval is a bootstrap. Keeping the dependency
+# list short means the analysis runs wherever the eval logs were produced.
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# Needed only to RUN the experiment (calls model APIs), not to analyse its output.
+experiment = [
+    "inspect_ai",
+    "control-arena",
+    "python-dotenv",
+    "xarray>=2024.10.0",
+]
+# The pre-correction figure pipeline still uses sklearn.
+legacy = ["scikit-learn"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.setuptools]
+packages = ["utils"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",  # long lines are usually tables or model ids
+    "E712",  # `== True` is required for pandas boolean masks
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

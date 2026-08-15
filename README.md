@@ -77,38 +77,69 @@ Fixed across all cells: APPS setting, defer-to-trusted @ 0.7, `basic_monitor` sc
 
 Weak-tier cells are the deployable *trusted monitoring* result (a weak model is "trusted" because it's too weak to plausibly scheme). Strong-tier cells are an **untrusted-monitoring upper bound**, not a deployment recommendation.
 
+## Layout
+
+```
+run_experiment.py        the experiment runner (calls model APIs, costs money)
+utils/                   shared library - nothing else defines a model constant
+  config.py                model registry: id, label, family, tier, + paths
+  metrics.py               AUC, TPR at zero FPR, rank correlation
+  data.py                  cell loading with an on-disk score cache
+  stats.py                 variance decomposition, bootstrap, permutation tests
+  viz.py                   matplotlib styling and the validated tier ramp
+scripts/                 thin CLIs; the logic lives in utils/
+  analyze_identity.py      the confirmatory identity-vs-tier analysis
+  analyze_interaction.py   the preregistered provenance interaction test
+  make_identity_figures.py fig6-8
+  make_legacy_figures.py   fig2-4 (pre-correction pipeline, needs scikit-learn)
+tests/                   registry integrity + the metric identities that caused
+                         the retractions above
+notebooks/               the original ControlArena tutorial walkthrough
+figures/  logs/          outputs
+experiment design.md     the preregistration, left at the repo root on purpose
+                         so its path and commit date stay trivially checkable
+```
+
 ## Running it
 
 ```bash
-pip install inspect_ai control-arena python-dotenv "xarray>=2024.10.0" matplotlib scikit-learn
+pip install -e ".[experiment]"        # to run the experiment
+pip install -e .                      # analysis only (no sklearn, no scipy)
+pip install -e ".[legacy,dev]"        # + the old figure pipeline and pytest
 ```
 
 `.env` needs `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` (Gemini + Qwen are routed via OpenRouter). Docker must be running — APPS executes code in a sandbox.
 
 ```bash
 # Smoke test any preset first (~$1, catches bad model IDs)
-LIMIT=2 EXPERIMENT=ladder-openai python monitor_discrimination_experiment.py
+LIMIT=2 EXPERIMENT=ladder-openai python run_experiment.py
 
 # Ladders first (they generate + cache attacker trajectories)
-LIMIT=100 EXPERIMENT=ladder-openai    python monitor_discrimination_experiment.py
-LIMIT=100 EXPERIMENT=ladder-anthropic python monitor_discrimination_experiment.py
-LIMIT=100 EXPERIMENT=ladder-google    python monitor_discrimination_experiment.py
+LIMIT=100 EXPERIMENT=ladder-openai    python run_experiment.py
+LIMIT=100 EXPERIMENT=ladder-anthropic python run_experiment.py
+LIMIT=100 EXPERIMENT=ladder-google    python run_experiment.py
 
 # Cross matrix reuses cached generations (monitor-only cost)
-LIMIT=100 EXPERIMENT=cross python monitor_discrimination_experiment.py
+LIMIT=100 EXPERIMENT=cross python run_experiment.py
 
 # Confirmatory analysis + figures (no sklearn/scipy needed)
-LIMIT=100 python analyze_monitor_identity.py
-LIMIT=100 python make_identity_figures.py
+LIMIT=100 python -m scripts.analyze_identity
+LIMIT=100 python -m scripts.make_identity_figures
 
-# Original figure pipeline (needs scikit-learn)
-LIMIT=100 python make_figures.py
+# Preregistered provenance interaction test
+LIMIT=100 python -m scripts.analyze_interaction
+
+# Pre-correction figure pipeline (needs scikit-learn)
+LIMIT=100 python -m scripts.make_legacy_figures
+
+pytest                                # registry + metric identities
 ```
 
-`analyze_monitor_identity.py` caches raw suspicion scores to `.score_cache.pkl` on
-first run; delete it to re-parse from the `.eval` logs.
+Run the `scripts.*` modules with `python -m` from the repo root so `utils/` is importable, or `pip install -e .` and run them from anywhere.
 
-**Env vars:** `LIMIT` (n per mode) · `EXPERIMENT` (`ladder-*`, `cross`, `qwen`, `all`) · `PAIRS="atk:mon,..."` (specific cells) · `FORCE=1` (re-run incomplete cells) · `MAX_RETRIES` (default 3) · `MAX_CONNECTIONS`, `MAX_SAMPLES` (throttling).
+The analysis caches raw suspicion scores to `.score_cache.pkl` on first run; delete it to re-parse from the `.eval` logs.
+
+**Env vars:** `LIMIT` (n per mode) · `EXPERIMENT` (`ladder-*`, `cross`, `qwen`, `all`) · `PAIRS="atk:mon,..."` (specific cells) · `FORCE=1` (re-run incomplete cells) · `BOOTSTRAP` (draws, default 4000) · `LOG_ROOT`, `FIG_DIR`, `SCORE_CACHE` · `MAX_RETRIES` (default 3) · `MAX_CONNECTIONS`, `MAX_SAMPLES` (throttling).
 
 **Cost control:** attacker generations are cached, so run one cell per attacker to completion *first* — every subsequent cell for that attacker is monitor-only. An interrupted generation caches nothing and you pay again.
 
