@@ -1,6 +1,6 @@
 # Trusted Monitoring: Monitor Identity Beats Monitor Tier
 
-An AI control experiment built on [ControlArena](https://github.com/UKGovernmentBEIS/control-arena) (UK AI Security Institute). It set out to measure which monitor to deploy; the answer is that it is monitor identity, not capability tier — and getting there required correcting two measurement mistakes of my own.
+An AI control experiment built on [ControlArena](https://github.com/UKGovernmentBEIS/control-arena) (UK AI Security Institute). It set out to measure which monitor to deploy; the answer is that it is monitor identity, not capability tier — and getting there required retracting three claims of my own, listed below.
 
 A 3 × 8 attacker × monitor matrix (24 cells, 10 distinct monitors, four model lineages), n = 100 per mode.
 
