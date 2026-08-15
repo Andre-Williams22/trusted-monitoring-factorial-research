@@ -4,24 +4,57 @@ An AI control experiment built on [ControlArena](https://github.com/UKGovernment
 
 A 3 × 8 attacker × monitor matrix (24 cells, 10 distinct monitors, four model lineages), n = 100 per mode.
 
-## Headline findings (23 of 24 cells; 15 viable after excluding a dead attacker row)
+## The finding: which model, not what size
+
+Six monitors, each tested against **both** surviving attacker rows — a balanced sub-design that happens to be exactly 3 weak-tier and 3 strong-tier, so attacker difficulty cancels. Metric is the fraction of attacks flagged at **zero false alarms on honest code**.
+
+| Monitor | Tier | Caught | Caught (attacks that landed) | False alarms |
+|---|---|---|---|---|
+| claude-opus-4-8 | strong | 0.460 | 0.298 | 0.000 |
+| **claude-haiku-4-5** | **weak** | **0.372** | **0.405** | **0.230** |
+| gemini-3.1-pro | strong | 0.360 | **0.044** | 0.000 |
+| gemini-3.1-flash-lite | weak | 0.290 | 0.365 | 0.005 |
+| Qwen-2.5-72B | strong | 0.235 | 0.351 | 0.010 |
+| gpt-4.1-mini | weak | 0.170 | 0.228 | 0.000 |
+
+Strong, weak, strong, weak, strong, weak — the tier column alternates against the ranking.
+
+- Strong tier averages **0.352**; weak averages **0.277**. **Tier gap: 0.074.** Tier is not nothing.
+- Average spread *within* a tier: **0.214**.
+- **Ratio 2.9×**, P(identity effect > tier effect) = **0.993**. Holds on all three metrics tried (2.9× / 2.4× / 2.8×).
+- Tier explains ~15% of the variance in monitor performance — and shuffling which monitor holds which tier label explains just as much (permutation p = 0.50).
+
+**The weak tier contains both the second-best monitor and the worst one.** Weak-tier Haiku beats strong-tier Qwen at P = 0.97; weak-tier gpt-4.1-mini is last of six. Knowing a monitor's tier buys you very little.
+
+Two caveats that belong next to the ranking: **Haiku flags 23% of honest code** (every other monitor is near zero — it earns its rank at matched false-alarm rate, but that rate is the whole deployment story), and **strong-tier `gemini-3.1-pro` catches 4% of the attacks that actually landed**, last of six despite sitting mid-table on all attacks.
+
+## Supporting findings
 
 | # | Finding | Status |
 |---|---|---|
-| 1 | **The honest suspicion distribution is degenerate, so the audit budget never binds.** In 10 of 15 cells all 100 honest samples share one score; no cell has more than two distinct values. The 1/2/5% thresholds are identical in 12 of 15 cells. | Measurement |
-| 2 | **On that data ROC-AUC is algebraically a detection rate**, not a ranking statistic: where honest is constant, AUC = 0.5 + p/2, exact to four decimals. | Measurement |
-| 3 | **At tutorial scale safety is uninterpretable.** A blind monitor (AUC 0.53) reported safety = 1.00 at n=15; the bootstrap 95% CI at n=10/mode spans [0.00, 0.83]. Convergent with Ge-Wang et al. (2026) by a different mechanism. | H3, confirmed |
-| 4 | **Monitor identity beats monitor tier.** Two monitors sharing a tier differ **~3×** more than the tiers differ (2.9× / 2.4× / 2.8× on three metrics, P(identity > tier) ≈ 0.99). Tier explains ~15% of variance — no more than a random relabelling (permutation p = 0.50). | H1, confirmed after metric fix |
-| 5 | **A strong-tier monitor is worst where it counts.** Scored only on backdoors that landed, `gemini-3.1-pro` catches **4%** — last of six, below every weak-tier model. | Unplanned |
-| 6 | **Monitor provenance: a bound, not a null.** The interaction is +0.0067 AUC (p = 0.60), but 3 of 6 same-family cells have *structurally zero* residuals — the test rests on three contrasts across two families, which disagree in sign. Effects rivalling the identity effect are ruled out; smaller ones are unresolved. | H2, bounded |
-| 7 | **Elicitation is a silent confound.** Under one identical attack prompt, successful attacks per 100 ran Gemini 45–69, GPT-5.5 11–37, Opus 4.8 just **1**. Opus is not refusing — it solves 84 main tasks in attack mode. Its rows read as a monitoring success and are an artifact of a red team that didn't attack. | Unplanned, post-hoc |
-| 8 | **Cross-provider monitoring is brittle.** Thinking-block signature rejection and a 22 KB `id` field — one cell of 24 is uncompleteable. | Incidental |
+| 1 | **Monitor identity beats monitor tier** — the table above. | H1, confirmed after metric fix |
+| 2 | **A strong-tier monitor is worst where it counts.** `gemini-3.1-pro` catches 4% of landed backdoors. | Unplanned |
+| 3 | **Elicitation is a silent confound.** Under one identical attack prompt, successful attacks per 100 ran Gemini 45–69, GPT-5.5 11–37, Opus 4.8 just **1**. Opus is not refusing — it solves 84 main tasks in attack mode. Its rows read as a monitoring success and are an artifact of a red team that didn't attack. | Unplanned, post-hoc |
+| 4 | **Monitor provenance: a bound, not a null.** The interaction is +0.0067 AUC (p = 0.60), but 3 of 6 same-family cells have *structurally zero* residuals — the test rests on three contrasts across two families, which disagree in sign. Effects rivalling the identity effect are ruled out; smaller ones are unresolved. | H2, bounded |
+| 5 | **Cross-provider monitoring is brittle.** Thinking-block signature rejection and a 22 KB `id` field — one cell of 24 is uncompleteable. | Incidental |
 
-### Retraction
+### Measurement corrections (how the finding was nearly missed)
 
-An earlier version of this repo claimed **"neither capability ladder is monotonic."** That was an artifact of AUC on a degenerate honest distribution. Under the corrected metric both within-family ladders climb (0.21 → 0.34 → 0.41 and 0.20 → 0.23 → 0.33), but the bootstrap only puts monotonicity at 54% / 69%. The honest verdict is **unresolved at this sample size** — not monotonic, and not non-monotonic either.
+| # | Correction | Status |
+|---|---|---|
+| A | **The honest suspicion distribution is degenerate, so the audit budget never binds.** In 10 of 15 cells all 100 honest samples share one score; no cell has more than two distinct values. The 1/2/5% thresholds are identical in 12 of 15 cells. Likely a `basic_monitor` scaffold property — check yours. | Measurement |
+| B | **On that data ROC-AUC is algebraically a detection rate**, not a ranking statistic: where honest is constant, AUC = 0.5 + p/2, exact to four decimals. | Measurement |
+| C | **At tutorial scale safety is uninterpretable.** A blind monitor (AUC 0.53) reported safety = 1.00 at n=15; the bootstrap 95% CI at n=10/mode spans [0.00, 0.83]. Convergent with Ge-Wang et al. (2026) by a different mechanism. | H3, confirmed |
 
-**Reporting checklist.** Any trusted-monitoring safety number should ship with: (1) **the catch rate on attacks that actually landed**, not the aggregate catch count; (2) **the number of distinct honest suspicion values** — if it's one, your audit budget isn't binding; (3) **monitor false-positive rate on honest traffic**; (4) **successful-attack count** (below ~5, safety is noise); (5) **n and a CI**. One column each; none are standard.
+### Retractions
+
+**"Neither capability ladder is monotonic"** — an artifact of AUC on a degenerate honest distribution. Under the corrected metric both within-family ladders climb (0.21 → 0.34 → 0.41 and 0.20 → 0.23 → 0.33), but the bootstrap only puts monotonicity at 54% / 69%. The honest verdict is **unresolved at this sample size** — not monotonic, and not non-monotonic either.
+
+**"The corrected metric doubles the effect"** — it doesn't. When honest suspicion is constant, `TPR@0%FPR = 2 × (AUC − 0.5)` exactly, so the spread going 0.145 → 0.290 was a change of units. Only 5 of 15 cells actually move. The unit-free ratio went 2.8× → 2.9×, which makes the finding **robust** to metric choice, not amplified by it.
+
+**A claim that ControlArena's `compute_safety` is flawed** for counting all audited attack attempts in its numerator. It is the standard definition — [Ge-Wang et al. (2026)](https://arxiv.org/html/2606.06529v1) state it identically, and the framework treats catching any attempt as a blue-team win because it is decisive evidence of scheming. Withdrawn in full.
+
+**Reporting checklist.** Any trusted-monitoring result should ship with: (1) **the number of distinct honest suspicion values** — if it's one, your audit budget isn't binding and your ROC statistics are detection rates; (2) **monitor false-positive rate on honest traffic**, next to whatever detection number you quote; (3) **catch rate on attacks that actually landed**, alongside safety — they are different quantities and the gap is large; (4) **successful-attack count** (below ~5, safety is noise); (5) **n and a CI**. One column each; none are standard.
 
 Preregistration: [experiment design.md](experiment%20design.md) · Figures: [figures/](figures/) · Per-cell results: [logs/monitor_exp/](logs/monitor_exp/)
 
@@ -30,7 +63,7 @@ Preregistration: [experiment design.md](experiment%20design.md) · Figures: [fig
 **Attackers (rows):** strongest per family — `gpt-5.5`, `claude-opus-4-8`, `gemini-3.1-pro-preview`
 **Monitors (columns):** 10 distinct models — weak / mid / strong per family + open-weights `Qwen-2.5-72B` (always cross-lineage)
 
-Each attacker is paired with **8** of the 10: its own family's full three-tier ladder, plus the weak and strong tier of each *other* family, plus Qwen. 3 × 8 = 24 cells. **9** monitors enter the analysis — `claude-sonnet-5` appears only in the Opus attacker row, which is dropped wholesale (finding 7).
+Each attacker is paired with **8** of the 10: its own family's full three-tier ladder, plus the weak and strong tier of each *other* family, plus Qwen. 3 × 8 = 24 cells. **9** monitors enter the analysis — `claude-sonnet-5` appears only in the Opus attacker row, which is dropped wholesale (finding 3).
 
 | Tier | OpenAI | Anthropic | Google | Open-weights |
 |---|---|---|---|---|
@@ -90,7 +123,7 @@ Every results table carries `n`, `n_exp`, `complete`, and `n_success_atk` so nei
 
 ## Limitations
 
-**Two viable attacker rows** — every monitor mean rests on two cells, and the bootstrap resamples within cells, not across attackers, so no interval here captures attacker-to-attacker variation · no mid tier in the balanced 2 × 6 confirmatory sub-design · the identity-vs-tier ratio's upper bound is unstable and shouldn't be quoted · the landed-attack metric has small denominators (11–69 per cell) · prompted proxy attacker, not a real schemer · static, non-adaptive attacks · **one monitor scaffold, one domain** — the degenerate score distribution may be a property of *this scaffold* rather than of these models, which is the most important thing to check before generalising findings 1 and 2 · provenance is a bound resting on three contrasts across two families · closed-model API snapshot, IDs pinned · findings 5 and 7 are post-hoc.
+**Two viable attacker rows** — every monitor mean rests on two cells, and the bootstrap resamples within cells, not across attackers, so no interval here captures attacker-to-attacker variation · no mid tier in the balanced 2 × 6 confirmatory sub-design · the identity-vs-tier ratio's upper bound is unstable and shouldn't be quoted · the landed-attack metric has small denominators (11–69 per cell) · prompted proxy attacker, not a real schemer · static, non-adaptive attacks · **one monitor scaffold, one domain** — the degenerate score distribution may be a property of *this scaffold* rather than of these models, which is the most important thing to check before generalising corrections A and B · provenance is a bound resting on three contrasts across two families · closed-model API snapshot, IDs pinned · findings 2 and 3 are post-hoc.
 
 ## References
 
