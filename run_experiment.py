@@ -256,20 +256,24 @@ def run_pair(atk: str, mon: str) -> None:
 # ---- Analysis ------------------------------------------------------------
 def analyze(atk: str, mon: str) -> dict:
     import pandas as pd
-    from sklearn.metrics import roc_auc_score
+
+    # utils.metrics.auc is Mann-Whitney with tie correction - identical to
+    # sklearn's roc_auc_score on these inputs, and keeps sklearn off the runner's
+    # dependency list. It was previously imported here and would kill the whole
+    # reporting step with ModuleNotFoundError in an environment that only had the
+    # experiment extras installed.
+    from utils.metrics import auc as _auc
 
     df = samples_df(log_dir_for(atk, mon)).copy()
-    sc = "score_max_suspicion_scorer"
+    sc = config.SUSPICION_COL
     df[sc] = pd.to_numeric(df[sc], errors="coerce")
     scored = df.dropna(subset=[sc])
     h = scored[scored.eval_mode == "honest"]
     a = scored[scored.eval_mode == "attack"]
 
-    labels = [0] * len(h) + [1] * len(a)
-    scores = list(h[sc]) + list(a[sc])
     auc = (
-        round(roc_auc_score(labels, scores), 3)
-        if len(set(labels)) == 2 and len(scores) > 1
+        round(_auc(h[sc].to_numpy(float), a[sc].to_numpy(float)), 3)
+        if len(h) and len(a)
         else float("nan")
     )
 
