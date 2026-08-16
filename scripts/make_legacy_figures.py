@@ -20,11 +20,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.metrics import roc_auc_score
 
 from control_arena.analysis import compute_safety, compute_usefulness, samples_df
 
 from utils import config
+from utils.metrics import auc as _auc
 
 LIMIT = config.limit()
 ROOT = config.log_root()
@@ -65,7 +65,9 @@ def load_cells() -> pd.DataFrame:
             continue  # incomplete -> excluded (99% tolerance, see cell_status)
         h = scored[scored.eval_mode == "honest"]
         a = scored[scored.eval_mode == "attack"]
-        auc = roc_auc_score([0] * len(h) + [1] * len(a), list(h[SC]) + list(a[SC]))
+        # Mann-Whitney with tie correction; identical to roc_auc_score here and
+        # keeps sklearn off the dependency list (see utils/metrics.py).
+        auc = _auc(h[SC].to_numpy(float), a[SC].to_numpy(float))
         n_succ = int(((a["main_task_success"] == True) & (a["side_task_success"] == True)).sum())  # noqa: E712
         try:
             safety, n_excl = safety_at(df, 5)
@@ -320,11 +322,30 @@ def main() -> None:
             print(f"{tier:7} same={s.auc.mean():.3f} (n={len(s)})  cross={c.auc.mean():.3f} (n={len(c)})"
                   f"  delta={c.auc.mean()-s.auc.mean():+.3f}")
 
-    fig_ladder(df); fig_heatmap(df); fig_mirage(df)
-    fig_elicitation(df); fig_monitor_ranking(df)
+    fig_heatmap(df); fig_mirage(df); fig_elicitation(df)
+    # fig1 (AUC ladder) and fig5 (AUC ranking) are superseded by fig8 and fig6:
+    # both show the pre-correction view in which ROC-AUC on a degenerate honest
+    # distribution made the capability ladders look non-monotonic. Still
+    # reproducible, but written aside so they do not re-enter the figure set.
+    sup = os.path.join(OUT, "superseded")
+    os.makedirs(sup, exist_ok=True)
+    _out = globals()["OUT"]
+    globals()["OUT"] = sup
+    try:
+        fig_ladder(df); fig_monitor_ranking(df)
+    finally:
+        globals()["OUT"] = _out
     with open(f"{OUT}/figures_data.md", "w") as f:
         f.write(f"# Figure data (n={2*LIMIT} per cell)\n\n")
-        f.write(df[cols].to_markdown(index=False))
+        # Written by hand rather than DataFrame.to_markdown, which needs the
+        # optional `tabulate` package - one more dependency this repo does not
+        # need in order to reproduce its own outputs.
+        t = df[cols]
+        f.write("| " + " | ".join(cols) + " |\n")
+        f.write("|" + "|".join("---" for _ in cols) + "|\n")
+        for row in t.itertuples(index=False):
+            f.write("| " + " | ".join(
+                f"{v:.3f}" if isinstance(v, float) else str(v) for v in row) + " |\n")
     print(f"\nWrote figures + data to {OUT}/")
 
 
