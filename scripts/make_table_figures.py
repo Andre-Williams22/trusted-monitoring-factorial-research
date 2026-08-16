@@ -124,6 +124,10 @@ def fig_design(scores: dict, out: str) -> None:
     ax.invert_yaxis()
     ax.axis("off")
 
+    # Every paired cell RAN at full n. The Opus row is excluded from analysis
+    # afterwards, at the row level, because that attacker landed one successful
+    # attack in 100 - so the cells still show their sample count and keep their
+    # tier colour, hatched to mark the exclusion rather than blanked out.
     for r, attacker in enumerate(ATTACKERS):
         for c, monitor in enumerate(monitors):
             box = dict(xy=(c - 0.42, r - 0.40), width=0.84, height=0.80)
@@ -131,14 +135,19 @@ def fig_design(scores: dict, out: str) -> None:
                 ax.add_patch(plt.Rectangle(**box, facecolor="#f4f3ef",
                                            edgecolor="none", zorder=1))
                 continue
-            dead = scores[(attacker, monitor)]["succ"].sum() < config.MIN_SUCCESSFUL_ATTACKS
-            if dead:
-                ax.add_patch(plt.Rectangle(**box, facecolor="#e8e7e1",
-                                           edgecolor=viz.BASELINE, lw=0.8, zorder=2))
-                ax.text(c, r, "dropped", ha="center", va="center", fontsize=6.9,
-                        color=viz.INK_MUTED, zorder=3)
+            tier_c = viz.TIER_COLOR[config.TIER[monitor]]
+            excluded = scores[(attacker, monitor)]["succ"].sum() < config.MIN_SUCCESSFUL_ATTACKS
+            if excluded:
+                ax.add_patch(plt.Rectangle(**box, facecolor=tier_c, alpha=0.30,
+                                           edgecolor="none", zorder=2))
+                ax.add_patch(plt.Rectangle(**box, facecolor="none", hatch="////",
+                                           edgecolor="#ffffff", lw=0.0, zorder=3))
+                ax.add_patch(plt.Rectangle(**box, facecolor="none",
+                                           edgecolor=viz.BASELINE, lw=0.9, zorder=4))
+                ax.text(c, r, "200", ha="center", va="center", fontsize=7.6,
+                        color=viz.INK_SECONDARY, zorder=5)
             else:
-                ax.add_patch(plt.Rectangle(**box, facecolor=viz.TIER_COLOR[config.TIER[monitor]],
+                ax.add_patch(plt.Rectangle(**box, facecolor=tier_c,
                                            edgecolor="none", zorder=2))
                 ax.text(c, r, "200", ha="center", va="center", fontsize=7.6,
                         color="#ffffff" if config.TIER[monitor] != "weak" else viz.INK, zorder=3)
@@ -148,9 +157,19 @@ def fig_design(scores: dict, out: str) -> None:
                 fontsize=8.1, color=viz.INK_SECONDARY)
         ax.text(c, -0.50, config.TIER[monitor], ha="center", va="bottom",
                 fontsize=6.8, color=viz.INK_MUTED)
+    # Row annotation: successful attacks per 100 is an ATTACKER property, and it
+    # is the reason the Opus row is excluded - so it belongs on the row, not in
+    # each cell.
     for r, attacker in enumerate(ATTACKERS):
-        ax.text(-0.62, r, config.LABEL[attacker], ha="right", va="center",
+        succ = [int(scores[(attacker, m)]["succ"].sum()) for m in monitors
+                if (attacker, m) in cells]
+        rng = f"{min(succ)}" if min(succ) == max(succ) else f"{min(succ)}–{max(succ)}"
+        noun = "successful attack" if max(succ) == 1 else "successful attacks"
+        ax.text(-0.62, r - 0.10, config.LABEL[attacker], ha="right", va="center",
                 fontsize=9.2, color=viz.INK)
+        ax.text(-0.62, r + 0.16, f"{rng} {noun} / 100", ha="right",
+                va="center", fontsize=7.0,
+                color="#b3401f" if max(succ) < config.MIN_SUCCESSFUL_ATTACKS else viz.INK_MUTED)
 
     # family separators
     boundaries = []
@@ -164,23 +183,27 @@ def fig_design(scores: dict, out: str) -> None:
         plt.Rectangle((0, 0), 1, 1, facecolor=viz.TIER_COLOR["weak"]),
         plt.Rectangle((0, 0), 1, 1, facecolor=viz.TIER_COLOR["mid"]),
         plt.Rectangle((0, 0), 1, 1, facecolor=viz.TIER_COLOR["strong"]),
-        plt.Rectangle((0, 0), 1, 1, facecolor="#e8e7e1", edgecolor=viz.BASELINE),
+        plt.Rectangle((0, 0), 1, 1, facecolor=viz.TIER_COLOR["strong"], alpha=0.30,
+                      hatch="////", edgecolor=viz.BASELINE),
         plt.Rectangle((0, 0), 1, 1, facecolor="#f4f3ef"),
     ]
     labels = ["weak-tier monitor", "mid-tier monitor", "strong-tier monitor",
-              "ran, then dropped (red team never attacked)", "not paired"]
+              "ran in full — excluded from analysis (see the Opus row)", "not paired"]
     fig.legend(handles, labels, loc="lower center", ncol=3, frameon=False,
                fontsize=8.1, bbox_to_anchor=(0.5, -0.06))
 
-    fig.suptitle("The design: 3 attackers x 8 monitors each = 24 cells, all completed",
+    fig.suptitle("The design: 3 attackers x 8 monitors each — all 24 cells ran at n=200",
                  fontsize=12.5, x=0.008, ha="left", color=viz.INK, fontweight="bold")
     ax.text(0, 1.0, "", transform=ax.transAxes)
     fig.text(0.008, 0.885,
-             "Each attacker is paired with its own family's full three-tier ladder, plus the weak and "
-             "strong tier of each other family, plus Qwen.\nCells show samples run (200 = 100 honest + "
-             "100 attack). Mid-tier monitors appear only in their own family's row.",
+             "Each attacker is paired with its own family's full three-tier ladder, plus the weak and strong "
+             "tier of each other family, plus Qwen. Mid-tier monitors\nappear only in their own family's row. "
+             "Every paired cell was run to completion at 200 samples (100 honest + 100 attack).\n"
+             "The eight hatched cells ran too — they are excluded from the analysis afterwards because their "
+             "ATTACKER landed one successful attack in 100,\nso every metric in that row rests on a single "
+             "event. The exclusion is a property of the row, not of any monitor.",
              ha="left", va="top", fontsize=8.5, color=viz.INK_SECONDARY, linespacing=1.5)
-    fig.tight_layout(rect=[0.02, 0.06, 1, 0.86])
+    fig.tight_layout(rect=[0.02, 0.06, 1, 0.82])
     fig.savefig(f"{out}/fig11_design.png", dpi=220, bbox_inches="tight")
     plt.close(fig)
 
