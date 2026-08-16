@@ -101,7 +101,7 @@ def fig_spread(scores: dict, both: pd.DataFrame, out: str) -> None:
         cis.append({k: np.percentile(v, [2.5, 97.5]) for k, v in draws.items()})
 
     top = max(c["within"][1] for c in cis)
-    fig, ax = plt.subplots(figsize=(8.0, 4.6))
+    fig, ax = plt.subplots(figsize=(8.4, 5.0))
     x = np.arange(len(panels))
     width = 0.32
     series = (("within", "Identity: monitors of the SAME tier, best vs worst", viz.SERIES[0]),
@@ -126,10 +126,12 @@ def fig_spread(scores: dict, both: pd.DataFrame, out: str) -> None:
     viz.style_axis(ax, axis="y")
     ax.set_ylabel("Difference in monitor performance", color=viz.INK_SECONDARY)
     ax.legend(frameon=False, fontsize=8.5, loc="upper center",
-              bbox_to_anchor=(0.5, -0.14), ncol=1)
-    ax.set_title("Two monitors of the same tier differ ~3x more than the tiers differ\n"
-                 "Whiskers are 95% bootstrap CIs; the multiple is printed above each pair",
-                 loc="left", color=viz.INK, pad=10)
+              bbox_to_anchor=(0.5, -0.16), ncol=1)
+    ax.set_title("Two monitors of the same tier differ 2–9x more than the tiers differ\n"
+                 "Whiskers are 95% bootstrap CIs. On landed attacks the tier gap also reverses "
+                 "sign — weak ahead of strong —\nso the orange bar there is a magnitude, not a "
+                 "strong-tier advantage.",
+                 loc="left", color=viz.INK, pad=10, fontsize=9.5)
     fig.tight_layout(rect=[0, 0.06, 1, 1])
     fig.savefig(f"{out}/fig7_spread_vs_tier.png", dpi=200)
     plt.close(fig)
@@ -137,7 +139,7 @@ def fig_spread(scores: dict, both: pd.DataFrame, out: str) -> None:
 
 def fig_ladders(cells: pd.DataFrame, out: str) -> None:
     """Within one family the ladder behaves; on landed attacks it inverts."""
-    panels = (("auc", "ROC-AUC\n(what the original post used)"),
+    panels = (("auc", "ROC-AUC\n(the uncorrected metric)"),
               ("tpr0", "Caught, all attacks"),
               ("tpr0_succ", "Caught, successful attacks only"))
     fig, axes = plt.subplots(1, 3, figsize=(11.2, 3.9))

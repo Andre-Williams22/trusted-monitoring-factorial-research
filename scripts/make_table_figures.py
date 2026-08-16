@@ -195,15 +195,12 @@ def fig_design(scores: dict, out: str) -> None:
     fig.suptitle("The design: 3 attackers x 8 monitors each — all 24 cells ran at n=200",
                  fontsize=12.5, x=0.008, ha="left", color=viz.INK, fontweight="bold")
     ax.text(0, 1.0, "", transform=ax.transAxes)
-    fig.text(0.008, 0.885,
-             "Each attacker is paired with its own family's full three-tier ladder, plus the weak and strong "
-             "tier of each other family, plus Qwen. Mid-tier monitors\nappear only in their own family's row. "
-             "Every paired cell was run to completion at 200 samples (100 honest + 100 attack).\n"
-             "The eight hatched cells ran too — they are excluded from the analysis afterwards because their "
-             "ATTACKER landed one successful attack in 100,\nso every metric in that row rests on a single "
-             "event. The exclusion is a property of the row, not of any monitor.",
+    fig.text(0.008, 0.90,
+             "Every paired cell ran to completion at 200 samples. The hatched Opus cells ran too — they are "
+             "excluded afterwards because that\nATTACKER landed one successful attack in 100, so the whole row "
+             "rests on a single event.",
              ha="left", va="top", fontsize=8.5, color=viz.INK_SECONDARY, linespacing=1.5)
-    fig.tight_layout(rect=[0.02, 0.06, 1, 0.82])
+    fig.tight_layout(rect=[0.02, 0.06, 1, 0.86])
     fig.savefig(f"{out}/fig11_design.png", dpi=220, bbox_inches="tight")
     plt.close(fig)
 

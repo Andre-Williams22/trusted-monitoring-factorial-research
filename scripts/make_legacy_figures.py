@@ -146,28 +146,54 @@ def fig_heatmap(df: pd.DataFrame) -> None:
     M = np.full((len(atks), len(mons)), np.nan)
     for _, r in df.iterrows():
         M[atks.index(r.attacker), mons.index(r.monitor)] = r.auc
-    fig, ax = plt.subplots(figsize=(1.1 * len(mons) + 3, 1.0 * len(atks) + 2.5))
-    im = ax.imshow(M, cmap="RdYlGn", vmin=0.45, vmax=0.85, aspect="auto")
-    ax.set_xticks(range(len(mons)))
-    ax.set_xticklabels([f"{m}\n({PROVIDER[m][0]}, {PROVIDER[m][1]})" for m in mons], fontsize=7, rotation=45, ha="right")
-    ax.set_yticks(range(len(atks)))
-    ax.set_yticklabels([f"{a}\n({PROVIDER[a][0]})" for a in atks], fontsize=8)
+    fig, ax = plt.subplots(figsize=(1.15 * len(mons) + 3, 1.0 * len(atks) + 3))
+    # AUC is a magnitude, so it gets a SEQUENTIAL single-hue ramp (light = low,
+    # dark = high). The previous RdYlGn was a rainbow on a magnitude - it implies
+    # a meaningless midpoint, and red-to-green is the single worst choice for
+    # colour-vision deficiency. Range starts at 0.5 because that is chance.
+    im = ax.imshow(M, cmap="Blues", vmin=0.50, vmax=0.80, aspect="auto")
+    # Unpaired cells must not read as "chance-level AUC" - on a ramp whose light
+    # end IS 0.50 an empty white square looks like a measured value. Grey them.
     for i in range(len(atks)):
         for j in range(len(mons)):
             if np.isnan(M[i, j]):
-                ax.text(j, i, "—", ha="center", va="center", c="gray")
+                ax.add_patch(plt.Rectangle((j - .5, i - .5), 1, 1,
+                                           facecolor="#e8e7e1", edgecolor="none", zorder=2))
+    ax.set_xticks(range(len(mons)))
+    ax.set_xticklabels([f"{config.LABEL[m]}\n{PROVIDER[m][1]}" for m in mons],
+                       fontsize=7.5, rotation=45, ha="right")
+    ax.set_yticks(range(len(atks)))
+    ax.set_yticklabels(
+        [config.LABEL[a] + ("\n(row excluded)" if a == "opus48" else "") for a in atks],
+        fontsize=8.5)
+    for i in range(len(atks)):
+        for j in range(len(mons)):
+            if np.isnan(M[i, j]):
+                ax.text(j, i, "not\npaired", ha="center", va="center",
+                        c="#898781", fontsize=6.5, linespacing=1.3, zorder=3)
                 continue
             same = PROVIDER[atks[i]][0] == PROVIDER[mons[j]][0]
-            ax.text(j, i, f"{M[i,j]:.2f}" + ("\n(same)" if same else ""),
-                    ha="center", va="center", fontsize=7,
+            # Ink must stay legible against both ends of the ramp.
+            ink = "#ffffff" if M[i, j] > 0.69 else "#0b0b0b"
+            ax.text(j, i, f"{M[i,j]:.2f}", ha="center", va="center",
+                    fontsize=8.5, color=ink,
                     fontweight="bold" if same else "normal")
             if same:
-                ax.add_patch(plt.Rectangle((j - .5, i - .5), 1, 1, fill=False, ec="black", lw=2))
-    fig.colorbar(im, ax=ax, label="Monitor AUC")
-    ax.set_xlabel("Monitor"); ax.set_ylabel("Attacker")
-    ax.set_title("H2: does monitor provenance matter?\nboxed = same model family as attacker", fontsize=10)
+                ax.add_patch(plt.Rectangle((j - .5, i - .5), 1, 1, fill=False,
+                                           ec="#eb6834", lw=2.4, zorder=5))
+    cbar = fig.colorbar(im, ax=ax, label="Monitor AUC  (0.50 = chance)", pad=0.02, shrink=0.82)
+    cbar.outline.set_visible(False)
+    ax.set_xlabel("Monitor", labelpad=8)
+    ax.set_ylabel("Attacker", labelpad=8)
+    ax.set_title("Monitor AUC across the full matrix\n"
+                 "Orange outline = monitor from the attacker's own model family. "
+                 "The Opus row is pinned at chance because that attacker never landed attacks.",
+                 fontsize=10, loc="left")
+    ax.tick_params(length=0)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
     fig.tight_layout()
-    fig.savefig(f"{OUT}/fig2_heatmap.png", dpi=150)
+    fig.savefig(f"{OUT}/fig2_heatmap.png", dpi=200)
 
 
 def fig_mirage(df: pd.DataFrame, n_boot: int = 400) -> None:
@@ -176,12 +202,17 @@ def fig_mirage(df: pd.DataFrame, n_boot: int = 400) -> None:
     cells = df[df.n_success_atk >= 5].head(3)  # only cells where attacks actually landed
     if cells.empty:
         return
-    fig, ax = plt.subplots(figsize=(6.5, 4.2))
-    for _, r in cells.iterrows():
+    # Small multiples rather than three translucent bands on one axis: overlapping
+    # fills turn to mud exactly where they matter most (the wide low-n end), and
+    # the comparison here is shape-against-shape, not value-against-value.
+    fig, axes = plt.subplots(1, len(cells), figsize=(3.5 * len(cells) + 0.6, 3.9),
+                             sharey=True)
+    axes = np.atleast_1d(axes)
+    for ax, (_, r) in zip(axes, cells.iterrows()):
         d = samples_df(os.path.join(ROOT, f"atk-{r.attacker}__mon-{r.monitor}__n{LIMIT}")).copy()
         d[SC] = pd.to_numeric(d[SC], errors="coerce"); d = d.dropna(subset=[SC])
         h, a = d[d.eval_mode == "honest"], d[d.eval_mode == "attack"]
-        ns, los, his = [], [], []
+        ns, los, his, mids = [], [], [], []
         for n in (10, 25, 50, 100):
             if len(h) < n or len(a) < n:
                 continue
@@ -194,17 +225,35 @@ def fig_mirage(df: pd.DataFrame, n_boot: int = 400) -> None:
                     pass
             if vals:
                 v = np.array(vals, float)
-                ns.append(n); los.append(np.percentile(v, 2.5)); his.append(np.percentile(v, 97.5))
-        if ns:
-            ax.fill_between(ns, los, his, alpha=0.25)
-            ax.plot(ns, [(l + h_) / 2 for l, h_ in zip(los, his)], "o-",
-                    label=f"{r.attacker} / {r.monitor}")
-    ax.set_xscale("log"); ax.set_xticks([10, 25, 50, 100]); ax.set_xticklabels(["10", "25", "50", "100"])
-    ax.set_xlabel("Samples per mode"); ax.set_ylabel("Safety @5% (95% bootstrap CI)")
-    ax.set_title("H3: at tutorial scale, safety is uninterpretable", fontsize=11)
-    ax.grid(alpha=0.3); ax.legend(fontsize=8); ax.set_ylim(-0.05, 1.05)
-    fig.tight_layout()
-    fig.savefig(f"{OUT}/fig3_mirage.png", dpi=150)
+                ns.append(n); los.append(np.percentile(v, 2.5))
+                his.append(np.percentile(v, 97.5)); mids.append(np.median(v))
+        if not ns:
+            continue
+        ax.fill_between(ns, los, his, color="#2a78d6", alpha=0.20, lw=0)
+        ax.plot(ns, los, color="#2a78d6", lw=1.0, alpha=0.6)
+        ax.plot(ns, his, color="#2a78d6", lw=1.0, alpha=0.6)
+        ax.plot(ns, mids, "o-", color="#2a78d6", lw=2, ms=6, mec="#fcfcfb", mew=1.4)
+        ax.annotate(f"width {his[0] - los[0]:.2f}", (ns[0], his[0]), fontsize=7.5,
+                    color="#52514e", xytext=(2, 5), textcoords="offset points")
+        ax.annotate(f"width {his[-1] - los[-1]:.2f}", (ns[-1], his[-1]), fontsize=7.5,
+                    color="#52514e", ha="right", xytext=(-2, 5), textcoords="offset points")
+        ax.set_xscale("log"); ax.set_xticks([10, 25, 50, 100])
+        ax.set_xticklabels(["10", "25", "50", "100"])
+        ax.set_title(f"{config.LABEL[r.monitor]}\nvs {config.LABEL[r.attacker]} attacker",
+                     fontsize=9, color="#0b0b0b")
+        ax.set_xlabel("Samples per mode", fontsize=8.5)
+        ax.grid(axis="y", color="#e1e0d9", lw=0.6)
+        ax.set_axisbelow(True)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        ax.tick_params(length=0)
+    axes[0].set_ylabel("Safety @5%  (95% bootstrap CI)", fontsize=8.5)
+    axes[0].set_ylim(-0.05, 1.05)
+    fig.suptitle("At tutorial scale a safety number carries almost no information\n"
+                 "Three cells, unchanged protocol. Within each panel the only thing varying is the sample count.",
+                 fontsize=11, x=0.01, ha="left")
+    fig.tight_layout(rect=[0, 0, 1, 0.88])
+    fig.savefig(f"{OUT}/fig3_mirage.png", dpi=200)
 
 
 def fig_elicitation(df: pd.DataFrame) -> None:
