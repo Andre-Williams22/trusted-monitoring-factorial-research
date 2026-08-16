@@ -203,6 +203,7 @@ Also opinion. Ordered by cost.
 - **The landed-attack metric has small denominators** (11–69 successful attacks per cell), so those intervals are the widest reported.
 - **Provenance is a bound, not a null.** Two same-family cells have structurally zero residuals; the test rests on four contrasts across two families that disagree in sign (interaction +0.0085 AUC).
 - **Findings 2 and 3 are post-hoc**, as is the entire selection-protocol section above.
+- **The exclusion rule is post-hoc.** Dropping cells with fewer than 5 successful attacks is not in the preregistration; it was added after seeing that `claude-opus-4-8` landed one. It is not load-bearing — the highest excluded cell has 1 successful attack and the lowest included has 11, so any cutoff from 2 to 11 gives the identical partition — but it was chosen with knowledge of the data.
 - **The selection criteria rest on seven monitors.** Neither supporting correlation clears the significance threshold at that n, and both are analysed on the same data that produced the headline result.
 - **Closed-model API snapshot.** Models update silently. IDs are pinned in the repo; the Google strong tier is an alias, not a fixed snapshot.
 
