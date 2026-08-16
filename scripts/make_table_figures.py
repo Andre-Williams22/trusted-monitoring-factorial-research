@@ -23,7 +23,7 @@ from utils import config, viz
 from utils.data import cell_value, load_scores
 
 ATTACKERS = ("gpt55", "opus48", "geminipro")
-BALANCED = ("opus48", "haiku45", "geminipro", "flashlite", "qwen", "gpt41mini")
+VIABLE_ATTACKERS = ("geminipro", "gpt55")
 
 
 # ---------------------------------------------------------------------------
@@ -34,14 +34,26 @@ def fig_results_table(scores: dict, out: str) -> None:
     needs to compare within rows as well as down columns. The tier chip carries
     the finding - it is the column that refuses to sort with the ranking.
     """
+    # Balanced sub-design derived from the data, not hardcoded: a monitor
+    # qualifies when it was scored against every viable attacker row.
+    balanced = sorted(
+        m for m in config.BY_KEY
+        if all((a, m) in scores for a in VIABLE_ATTACKERS)
+    )
     rows = []
-    viable_attackers = ("geminipro", "gpt55")
-    for key in BALANCED:
-        caught = np.mean([cell_value(scores[(a, key)], "tpr0") for a in viable_attackers])
-        landed = np.mean([cell_value(scores[(a, key)], "tpr0_succ") for a in viable_attackers])
-        fpr = np.mean([(scores[(a, key)]["h"] > 0).mean() for a in viable_attackers])
+    for key in balanced:
+        caught = np.mean([cell_value(scores[(a, key)], "tpr0") for a in VIABLE_ATTACKERS])
+        landed = np.mean([cell_value(scores[(a, key)], "tpr0_succ") for a in VIABLE_ATTACKERS])
+        fpr = np.mean([(scores[(a, key)]["h"] > 0).mean() for a in VIABLE_ATTACKERS])
         rows.append((config.LABEL[key], config.TIER[key], caught, landed, fpr))
     rows.sort(key=lambda r: -r[2])
+
+    strong = [r[2] for r in rows if r[1] == "strong"]
+    weak = [r[2] for r in rows if r[1] == "weak"]
+    within = np.mean([max(strong) - min(strong), max(weak) - min(weak)])
+    gap = abs(np.mean(strong) - np.mean(weak))
+    s_land = np.mean([r[3] for r in rows if r[1] == "strong"])
+    w_land = np.mean([r[3] for r in rows if r[1] == "weak"])
 
     headers = ["Monitor", "Tier", "Caught\n(all attacks)",
                "Caught\n(attacks that landed)", "False alarms\n(on honest code)"]
@@ -56,8 +68,9 @@ def fig_results_table(scores: dict, out: str) -> None:
     ax.text(0.015, 0.985, "Which monitor you pick beats what tier it is",
             ha="left", va="top", fontsize=13.5, color=viz.INK, fontweight="bold")
     ax.text(0.015, 0.905,
-            "Six monitors, each scored against both viable attackers. Strong, weak, strong, "
-            "weak, strong, weak —\nthe tier column alternates against the ranking. n = 100 per mode.",
+            f"{len(rows)} monitors, each scored against both viable attackers — the balanced "
+            f"sub-design. Tier does not\nsort the ranking: "
+            + ", ".join(r[1] for r in rows) + ". n = 100 per mode.",
             ha="left", va="top", fontsize=9.0, color=viz.INK_SECONDARY, linespacing=1.6)
 
     head_y, rule_y, first_y, row_h = 0.700, 0.672, 0.610, 0.089
@@ -88,9 +101,10 @@ def fig_results_table(scores: dict, out: str) -> None:
     bottom = first_y - (len(rows) - 1) * row_h - row_h * 0.55
     ax.plot([0.01, 0.99], [bottom, bottom], color=viz.BASELINE, lw=1.1)
     ax.text(0.015, bottom - 0.035,
-            "Strong tier averages 0.352, weak 0.277 — a gap of 0.074. The average spread "
-            "WITHIN a tier is 0.214, about 2.9x larger.\nP(identity effect > tier effect) = 0.993. "
-            "Haiku ranks first on landed attacks and flags 23% of honest code; both matter.",
+            f"On all attacks, strong tier averages {np.mean(strong):.3f} and weak {np.mean(weak):.3f} "
+            f"— a gap of {gap:.3f}. The spread WITHIN a tier is {within:.3f}, about {within/gap:.1f}x larger.\n"
+            f"On the attacks that LANDED the gap reverses: weak {w_land:.3f} vs strong {s_land:.3f}, "
+            f"and tier explains almost nothing (R2 = 0.02, permutation p = 0.78).",
             ha="left", va="top", fontsize=8.8, color=viz.INK_SECONDARY, linespacing=1.6)
     fig.tight_layout()
     fig.savefig(f"{out}/fig10_results_table.png", dpi=220)
@@ -114,15 +128,8 @@ def fig_design(scores: dict, out: str) -> None:
         for c, monitor in enumerate(monitors):
             box = dict(xy=(c - 0.42, r - 0.40), width=0.84, height=0.80)
             if (attacker, monitor) not in cells:
-                if attacker == "geminipro" and monitor == "gpt55":
-                    ax.add_patch(plt.Rectangle(**box, facecolor="none",
-                                               edgecolor="#b3401f", lw=1.4,
-                                               linestyle=(0, (3, 2)), zorder=2))
-                    ax.text(c, r, "API\nfail", ha="center", va="center", fontsize=7.2,
-                            color="#b3401f", linespacing=1.3, zorder=3)
-                else:
-                    ax.add_patch(plt.Rectangle(**box, facecolor="#f4f3ef",
-                                               edgecolor="none", zorder=1))
+                ax.add_patch(plt.Rectangle(**box, facecolor="#f4f3ef",
+                                           edgecolor="none", zorder=1))
                 continue
             dead = scores[(attacker, monitor)]["succ"].sum() < config.MIN_SUCCESSFUL_ATTACKS
             if dead:
@@ -158,17 +165,14 @@ def fig_design(scores: dict, out: str) -> None:
         plt.Rectangle((0, 0), 1, 1, facecolor=viz.TIER_COLOR["mid"]),
         plt.Rectangle((0, 0), 1, 1, facecolor=viz.TIER_COLOR["strong"]),
         plt.Rectangle((0, 0), 1, 1, facecolor="#e8e7e1", edgecolor=viz.BASELINE),
-        plt.Rectangle((0, 0), 1, 1, facecolor="none", edgecolor="#b3401f",
-                      linestyle=(0, (3, 2))),
         plt.Rectangle((0, 0), 1, 1, facecolor="#f4f3ef"),
     ]
     labels = ["weak-tier monitor", "mid-tier monitor", "strong-tier monitor",
-              "ran, then dropped (red team never attacked)",
-              "failed on a cross-provider API error", "not paired"]
+              "ran, then dropped (red team never attacked)", "not paired"]
     fig.legend(handles, labels, loc="lower center", ncol=3, frameon=False,
                fontsize=8.1, bbox_to_anchor=(0.5, -0.06))
 
-    fig.suptitle("The design: 3 attackers x 8 monitors each = 24 cells, 23 completed",
+    fig.suptitle("The design: 3 attackers x 8 monitors each = 24 cells, all completed",
                  fontsize=12.5, x=0.008, ha="left", color=viz.INK, fontweight="bold")
     ax.text(0, 1.0, "", transform=ax.transAxes)
     fig.text(0.008, 0.885,

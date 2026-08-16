@@ -3,6 +3,7 @@ geminipro,flash,mid,Google,62,0.615,0.23,0.1935483870967742,0.0,1
 geminipro,flashlite,weak,Google,65,0.626,0.2,0.16923076923076924,0.01,2
 geminipro,geminipro,strong,Google,45,0.665,0.33,0.08888888888888889,0.0,1
 geminipro,gpt41mini,weak,OpenAI,67,0.565,0.13,0.1044776119402985,0.0,1
+geminipro,gpt55,strong,OpenAI,63,0.715,0.43,0.4603174603174603,0.0,1
 geminipro,haiku45,weak,Anthropic,66,0.7634343434343435,0.35353535353535354,0.3333333333333333,0.31,2
 geminipro,opus48,strong,Anthropic,58,0.745,0.49,0.41379310344827586,0.0,1
 geminipro,qwen,strong,Qwen,69,0.6561,0.13,0.10144927536231885,0.02,2
