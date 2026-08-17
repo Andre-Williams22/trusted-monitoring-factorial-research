@@ -241,3 +241,6 @@ LESSWRONG_POST.md
 figures/superseded/
 drafts/
 drafts
+
+# macOS
+.DS_Store
